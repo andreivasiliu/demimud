@@ -1,0 +1,14 @@
+[package]
+name = "mudlib"
+version = "0.1.0"
+authors = ["whyte"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+crate-type = ["dylib"]
+
+[dependencies]
+bevy = { version = "0.4", default-features = false }
+netcore = { path = "../netcore" }
