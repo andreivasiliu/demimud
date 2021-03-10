@@ -1,6 +1,6 @@
 mod net;
 
-pub use net::{NetServer, NetEvent};
+pub use net::{NetServer, NetEvent, Source};
 
 #[repr(C)]
 pub enum EntryCode {
