@@ -94,11 +94,7 @@ impl NetServer {
                             Ok(bytes) if bytes == 0 => {
                                 let token = *token;
                                 self.mio_poll.registry().deregister(stream).unwrap();
-                                self.sockets
-                                    .remove(&token)
-                                    .expect("Was looking at it a second ago");
-                                self.ready_sockets.retain(|t| t.0 != token);
-                                self.write_buffers.remove(&token);
+                                self.disconnect(token);
                                 break (Source(token.0), NetEvent::Disconnected);
                             }
                             Ok(bytes) => {
@@ -111,7 +107,13 @@ impl NetServer {
                                 self.ready_sockets.pop();
                                 continue;
                             }
-                            Err(_e) => panic!("So sad..."),
+                            Err(error) => {
+                                println!("Socket error: {}", error);
+                                let token = *token;
+                                self.mio_poll.registry().deregister(stream).unwrap();
+                                self.disconnect(token);
+                                break (Source(token.0), NetEvent::Disconnected);
+                            }
                         }
                     }
                 }
@@ -159,6 +161,14 @@ impl NetServer {
                 }
             }
         }
+    }
+
+    pub fn disconnect(&mut self, token: Token) {
+        self.sockets
+            .remove(&token)
+            .expect("Was looking at it a second ago");
+        self.ready_sockets.retain(|t| t.0 != token);
+        self.write_buffers.remove(&token);
     }
 
     /// ### Panics

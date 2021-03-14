@@ -1,91 +1,11 @@
-use crate::world::{Area, AreaData, Exit, ExtraDescription, Mobile, Object, ResetCommand, Room, Vnum};
+use crate::world::{
+    Area, AreaData, Exit, ExtraDescription, Mobile, Object, ResetCommand, Room, Vnum,
+};
 
-struct AreaParser<'a>(&'a str, &'a str);
-
-impl<'a> AreaParser<'a> {
-    fn panic_on_line(&self, message: &str) -> ! {
-        let bytes_read = self.1.len() - self.0.len();
-        let processed_slice = &self.1[0..bytes_read];
-        let lines = processed_slice.chars().filter(|c| *c == '\n').count();
-        let columns = processed_slice.chars().rev().take_while(|c| *c != '\n').count();
-        let last_line = &processed_slice[processed_slice.len() - columns..];
-
-        panic!("On line {}, column {}: {}\nLast line:\n{}\n", lines+1, columns, message, last_line);
-    }
-
-    fn read_section(&mut self) -> &'a str {
-        let start = self.0.find(|c:char| !c.is_whitespace()).unwrap();
-        let end = self.0[start..].find(|c: char| c.is_whitespace()).unwrap();
-
-        if &self.0[start..start+1] != "#" {
-            self.panic_on_line(&format!("Expected '#', got '{}'", &self.0[start..start+1]))
-        }
-
-        let mut section = &self.0[start + 1..start + end];
-        if section.chars().last() == Some('\r') {
-            section = &section[..section.len() - 1]
-        }
-        self.0 = &self.0[start + end + 1..];
-        self.skip_one_newline();
-        section
-    }
-
-    fn read_word(&mut self) -> &'a str {
-        let start = self.0.find(|c: char| !c.is_ascii_whitespace()).unwrap();
-        let end = self.0[start..]
-            .find(|c: char| c.is_ascii_whitespace())
-            .unwrap();
-
-        let section = &self.0[start..start + end];
-        self.0 = &self.0[start + end..];
-        section
-    }
-
-    fn skip_one_newline(&mut self) {
-        if &self.0[..2] == "\r\n" {
-            self.0 = &self.0[2..];
-        } else if &self.0[..1] == "\n" {
-            self.0 = &self.0[1..];
-        } else {
-            self.panic_on_line("No newline found to skip");
-        }
-    }
-
-    fn skip_one_space(&mut self) {
-        if &self.0[..1] != " " {
-            self.panic_on_line(&format!("Expected ' ', got '{}'", &self.0[..1]))
-        }
-        self.0 = &self.0[1..];
-    }
-
-    fn skip_all_space(&mut self) {
-        let start = self.0.find(|c: char| !c.is_ascii_whitespace()).unwrap_or(0);
-        self.0 = &self.0[start..];
-    }
-
-    fn read_until_newline(&mut self) -> &'a str {
-        let start = 0;
-        let end = self.0[start..].find(|c: char| c == '\n' || c == '\r').unwrap();
-
-        let section = &self.0[start..start + end];
-        self.0 = &self.0[start + end..];
-        self.skip_one_newline();
-        section
-    }
-
-    fn read_until_tilde(&mut self) -> &'a str {
-        let start = 0;
-        let end = self.0[start..].find(|c: char| c == '~').unwrap();
-
-        let section = &self.0[start..start + end];
-        self.0 = &self.0[start + end + 1 + 1..];
-        self.skip_one_newline();
-        section
-    }
-}
+use crate::file_parser::FileParser;
 
 pub(super) fn load_area(area_file_contents: &str) -> Area {
-    let mut parser = AreaParser(area_file_contents, area_file_contents);
+    let mut parser = FileParser::new(area_file_contents);
 
     let mut area_data = None;
     let mut mobiles = None;
@@ -119,7 +39,7 @@ pub(super) fn load_area(area_file_contents: &str) -> Area {
     }
 }
 
-fn load_area_data(parser: &mut AreaParser) -> AreaData {
+fn load_area_data(parser: &mut FileParser) -> AreaData {
     let mut area_data = AreaData {
         name: Default::default(),
         short_name: Default::default(),
@@ -133,8 +53,8 @@ fn load_area_data(parser: &mut AreaParser) -> AreaData {
 
         let value = match key {
             "End" | "END" => break,
-            "Version" | "*parent_codebase" | "VNUMs" | "LComment" | "Security" | "colourcode"
-            | "MapScale" | "MapLevel" | "Vnum_offset" => parser.read_until_newline(),
+            "Version" | "*parent_codebase" | "VNUMs" | "LRange" | "LComment" | "Security"
+            | "colourcode" | "MapScale" | "MapLevel" | "Vnum_offset" => parser.read_until_newline(),
             "FromMUD" | "Name" | "ShortName" | "Builders" | "Credits" | "build_restricts"
             | "AFlags" | "Colour" | "Continent" | "*LastSaved" => parser.read_until_tilde(),
             section => panic!("Unrecognized area data section: '{}'", section),
@@ -159,7 +79,7 @@ fn load_area_data(parser: &mut AreaParser) -> AreaData {
     area_data
 }
 
-fn load_mobile_data(parser: &mut AreaParser) -> Vec<Mobile> {
+fn load_mobile_data(parser: &mut FileParser) -> Vec<Mobile> {
     let mut mobiles = Vec::new();
 
     loop {
@@ -175,7 +95,7 @@ fn load_mobile_data(parser: &mut AreaParser) -> Vec<Mobile> {
     mobiles
 }
 
-fn load_mobile(parser: &mut AreaParser, vnum: usize) -> Mobile {
+fn load_mobile(parser: &mut FileParser, vnum: usize) -> Mobile {
     let mut mobile = Mobile::default();
     mobile.vnum = Vnum(vnum);
 
@@ -188,8 +108,12 @@ fn load_mobile(parser: &mut AreaParser, vnum: usize) -> Mobile {
 
         let value = match key {
             "END" | "End" => break,
-            "Name" | "ShortD" | "LongD" | "Desc" | "Race" | "Act" | "AffBy" | "Off" | "Imm" | "Res" | "Vuln" | "Form" | "Part" | "StartP" | "DefPos" | "Size" | "Sex" | "MProg" => parser.read_until_tilde(),
-            "Align" | "XPMod" | "Level" | "Hitroll" | "HitDice" | "ManaDice" | "DamDice" | "DamType" | "AC" | "Wealth" | "Material" => parser.read_until_newline(),
+            "Name" | "ShortD" | "LongD" | "Desc" | "Race" | "Act" | "AffBy" | "Off" | "Imm"
+            | "Res" | "Vuln" | "Form" | "Part" | "StartP" | "DefPos" | "Size" | "Sex" | "MProg" => {
+                parser.read_until_tilde()
+            }
+            "Align" | "XPMod" | "Level" | "Hitroll" | "HitDice" | "ManaDice" | "DamDice"
+            | "DamType" | "AC" | "Wealth" | "Material" => parser.read_until_newline(),
             key => panic!("Unrecognized mobile data key: '{}'", key),
         };
 
@@ -198,6 +122,15 @@ fn load_mobile(parser: &mut AreaParser, vnum: usize) -> Mobile {
             "ShortD" => mobile.short_description = value.to_string(),
             "LongD" => mobile.long_description = value.to_string(),
             "Desc" => mobile.description = value.to_string(),
+            "Act" => {
+                for word in value.split_whitespace() {
+                    match word {
+                        "dont_wander" => mobile.sentinel = true,
+                        "unseen" => mobile.unseen = true,
+                        _ => (),
+                    }
+                }
+            }
             _ => (),
         }
     }
@@ -205,7 +138,7 @@ fn load_mobile(parser: &mut AreaParser, vnum: usize) -> Mobile {
     mobile
 }
 
-fn load_object_data(parser: &mut AreaParser) -> Vec<Object> {
+fn load_object_data(parser: &mut FileParser) -> Vec<Object> {
     let mut objects = Vec::new();
 
     loop {
@@ -221,7 +154,7 @@ fn load_object_data(parser: &mut AreaParser) -> Vec<Object> {
     objects
 }
 
-fn load_object(parser: &mut AreaParser, vnum: usize) -> Object {
+fn load_object(parser: &mut FileParser, vnum: usize) -> Object {
     let mut object = Object::default();
     object.vnum = Vnum(vnum);
 
@@ -236,9 +169,15 @@ fn load_object(parser: &mut AreaParser, vnum: usize) -> Object {
 
         let value = match key {
             "END" | "End" => break,
-            "Name" | "Short" | "Desc" | "ItemType" | "Material" | "Extra" | "Wear" | "ClassAllowances" => parser.read_until_tilde(),
-            "Level" | "Cost" | "Condition" | "Asize" | "Rsize" | "Values" | "Weight" | "Affect" => parser.read_until_newline(),
-            "ExtraDesc" => { value2 = Some(parser.read_until_tilde()); parser.read_until_tilde() }
+            "Name" | "Short" | "Desc" | "ItemType" | "Material" | "Extra" | "Extra2" | "Wear"
+            | "ClassAllowances" => parser.read_until_tilde(),
+            "Level" | "Cost" | "Condition" | "Asize" | "Rsize" | "Values" | "Weight" | "Affect" => {
+                parser.read_until_newline()
+            }
+            "ExtraDesc" => {
+                value2 = Some(parser.read_until_tilde());
+                parser.read_until_tilde()
+            }
             key => panic!("Unrecognized object data key: '{}'", key),
         };
 
@@ -246,12 +185,10 @@ fn load_object(parser: &mut AreaParser, vnum: usize) -> Object {
             "Name" => object.name = value.to_string(),
             "Short" => object.short_description = value.to_string(),
             "Desc" => object.description = value.to_string(),
-            "ExtraDesc" => {
-                object.extra_descriptions.push(ExtraDescription {
-                    keyword: value2.unwrap().to_string(),
-                    description: value.to_string(),
-                })
-            }
+            "ExtraDesc" => object.extra_descriptions.push(ExtraDescription {
+                keyword: value2.unwrap().to_string(),
+                description: value.to_string(),
+            }),
             _ => (),
         }
     }
@@ -259,7 +196,7 @@ fn load_object(parser: &mut AreaParser, vnum: usize) -> Object {
     object
 }
 
-fn load_room_data(parser: &mut AreaParser) -> Vec<Room> {
+fn load_room_data(parser: &mut FileParser) -> Vec<Room> {
     let mut rooms = Vec::new();
 
     loop {
@@ -275,7 +212,7 @@ fn load_room_data(parser: &mut AreaParser) -> Vec<Room> {
     rooms
 }
 
-fn load_room(parser: &mut AreaParser, vnum: usize) -> Room {
+fn load_room(parser: &mut FileParser, vnum: usize) -> Room {
     let mut room = Room::default();
     room.vnum = Vnum(vnum);
 
@@ -290,9 +227,16 @@ fn load_room(parser: &mut AreaParser, vnum: usize) -> Room {
 
         let value = match key {
             "END" | "End" => break,
-            "Name" | "Desc" | "RoomFlags" | "Sector" | "RoomEcho" | "EDesc" | "EFlags" | "EKeyvnum" | "EKeywords" => parser.read_until_tilde(),
-            "Mana" | "Heal" | "LockerQuant" | "LockerInitRent" | "LockerOngoRent" | "LockerWeight" | "LockerCapacity" | "LockerPickProof" | "Exit" => parser.read_until_newline(),
-            "ExtraDesc" => { value2 = Some(parser.read_until_tilde()); parser.read_until_tilde() }
+            "Name" | "Desc" | "RoomFlags" | "Sector" | "RoomEcho" | "EDesc" | "EFlags"
+            | "EKeyvnum" | "EKeywords" => parser.read_until_tilde(),
+            "Mana" | "Heal" | "LockerQuant" | "LockerInitRent" | "LockerOngoRent"
+            | "LockerWeight" | "LockerCapacity" | "LockerPickProof" | "Exit" => {
+                parser.read_until_newline()
+            }
+            "ExtraDesc" => {
+                value2 = Some(parser.read_until_tilde());
+                parser.read_until_tilde()
+            }
             key => panic!("Unrecognized room data key: '{}'", key),
         };
 
@@ -313,12 +257,10 @@ fn load_room(parser: &mut AreaParser, vnum: usize) -> Room {
                 let exit = room.exits.last_mut().unwrap();
                 exit.description = Some(value.to_string());
             }
-            "ExtraDesc" => {
-                room.extra_descriptions.push(ExtraDescription {
-                    keyword: value2.unwrap().to_string(),
-                    description: value.to_string(),
-                })
-            }
+            "ExtraDesc" => room.extra_descriptions.push(ExtraDescription {
+                keyword: value2.unwrap().to_string(),
+                description: value.to_string(),
+            }),
             _ => (),
         }
     }
@@ -326,7 +268,7 @@ fn load_room(parser: &mut AreaParser, vnum: usize) -> Room {
     room
 }
 
-fn skip_specials(parser: &mut AreaParser) {
+fn skip_specials(parser: &mut FileParser) {
     loop {
         let line = parser.read_until_newline();
         if line == "S" {
@@ -335,7 +277,7 @@ fn skip_specials(parser: &mut AreaParser) {
     }
 }
 
-fn load_resets(parser: &mut AreaParser) -> Vec<ResetCommand> {
+fn load_resets(parser: &mut FileParser) -> Vec<ResetCommand> {
     let mut resets = Vec::new();
 
     loop {
@@ -345,7 +287,7 @@ fn load_resets(parser: &mut AreaParser) -> Vec<ResetCommand> {
             "S" => {
                 parser.skip_one_newline();
                 break;
-            },
+            }
             "O" => {
                 let zero = parser.read_word();
                 let o_num = parser.read_word().parse().unwrap();
@@ -381,6 +323,6 @@ fn load_resets(parser: &mut AreaParser) -> Vec<ResetCommand> {
             }
         }
     }
-    
+
     resets
 }

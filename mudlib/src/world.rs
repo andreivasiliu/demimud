@@ -48,6 +48,9 @@ pub(super) struct Mobile {
     pub(super) short_description: String,
     pub(super) long_description: String,
     pub(super) description: String,
+
+    pub(super) sentinel: bool,
+    pub(super) unseen: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -170,16 +173,9 @@ impl World {
     }
 
     pub(super) fn has_room(&self, vnum: Vnum) -> bool {
-        self.rooms.get(vnum.0).is_some()
+        match self.rooms.get(vnum.0) {
+            Some(room) => room.vnum.0 != 0,
+            None => false,
+        }
     }
 }
-
-// fn load_area(path: &Path) -> Area {
-//     let contents = std::fs::read_to_string(path).unwrap();
-//     crate::load::load_area(&contents);
-
-//     let file = std::fs::File::open(path).unwrap();
-//     let buf_reader = std::io::BufReader::new(file);
-
-//     serde_yaml::from_reader(buf_reader).unwrap()
-// }

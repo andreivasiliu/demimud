@@ -4,7 +4,7 @@ use libloading::{library_filename, Symbol};
 use netcore::{EntryCode, ExitCode, NetServer};
 
 fn main() {
-    let mut net_server = NetServer::new("127.0.0.1:23".parse().unwrap());
+    let mut net_server = NetServer::new("0.0.0.0:23".parse().unwrap());
 
     net_server.set_tick(Duration::from_millis(1000));
 

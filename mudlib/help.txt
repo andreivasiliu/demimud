@@ -1,0 +1,26 @@
+`m# Looking`^
+
+You can '`Wlook`^' (or just '`Wl`^' for short) to examine the room you are in. You can
+also look at a specific object, NPC, player, or at certain things in the room
+description, for example '`Wlook bench`^' or '`Wlook dog`^'.
+
+`m# Movement`^
+
+Examine your room to see what exits are available; you can move between rooms
+by using the name of the exit as a command.
+
+The common exits are '`Wnorth`^', '`Weast`^', '`Wsouth`^', '`Wwest`^', '`Wup`^', and '`Wdown`^'. These
+can all be abbreviated to the first letter of their word ('`Wn`^', '`We`^', etc).
+
+`m# Communication`^
+
+Use '`Wsay <message>`^' to say something that will be heard by all players in your
+current room.
+
+There are also a list of socials you can use, like '`Wnod`^', '`Wsmile`^', etc.
+
+`m# Administrative commands`^
+
+Use '`Wwho`^' to check who is in the realm. You can '`Wrestart`^' and '`Wexit`^' the whole
+server as well.
+

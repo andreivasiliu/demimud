@@ -1,1 +1,6 @@
+# Build objects
 /target
+
+# Copyrighted
+/mudlib/area
+/mudlib/socials.txt
