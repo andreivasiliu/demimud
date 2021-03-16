@@ -11,6 +11,7 @@ pub(super) struct Room {
     pub(super) vnum: Vnum,
     pub(super) name: String,
     pub(super) description: String,
+    pub(super) sector: String,
 
     #[serde(default)]
     pub(super) exits: Vec<Exit>,
@@ -18,6 +19,9 @@ pub(super) struct Room {
     pub(super) room_echoes: Vec<RoomEcho>,
     #[serde(default)]
     pub(super) extra_descriptions: Vec<ExtraDescription>,
+
+    #[serde(skip)]
+    pub(super) area: String,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone)]
@@ -41,6 +45,19 @@ pub(super) struct ExtraDescription {
     pub(super) description: String,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub(super) enum Gender {
+    Male,
+    Female,
+    Neutral,
+}
+
+impl Default for Gender {
+    fn default() -> Self {
+        Gender::Neutral
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub(super) struct Mobile {
     pub(super) vnum: Vnum,
@@ -48,6 +65,7 @@ pub(super) struct Mobile {
     pub(super) short_description: String,
     pub(super) long_description: String,
     pub(super) description: String,
+    pub(super) gender: Gender,
 
     pub(super) sentinel: bool,
     pub(super) unseen: bool,
@@ -113,8 +131,15 @@ pub(super) struct World {
     pub(super) mobiles: Vec<Mobile>,
 }
 
-pub(super) fn load_world(path: &Path, area_names: &[&str]) -> World {
+pub(super) fn load_world(path: &Path) -> World {
     let mut world = World::default();
+
+    let area_names = std::fs::read_to_string(&path.join("arealist.txt")).unwrap();
+
+    let area_names: Vec<&str> = area_names
+        .split_whitespace()
+        .take_while(|area| *area != "$")
+        .collect();
 
     for file_name in area_names {
         let contents = std::fs::read_to_string(&path.join(file_name)).unwrap();

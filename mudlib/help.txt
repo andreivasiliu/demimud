@@ -12,15 +12,25 @@ by using the name of the exit as a command.
 The common exits are '`Wnorth`^', '`Weast`^', '`Wsouth`^', '`Wwest`^', '`Wup`^', and '`Wdown`^'. These
 can all be abbreviated to the first letter of their word ('`Wn`^', '`We`^', etc).
 
+If you are lost, the '`Wmap`^' command will generate a map based on the current
+room to help with navigation, or you can '`Wrecall`^' to one of the well-known
+places.
+
 `m# Communication`^
 
 Use '`Wsay <message>`^' to say something that will be heard by all players in your
 current room.
 
-There are also a list of socials you can use, like '`Wnod`^', '`Wsmile`^', etc.
+There are also a list of socials you can use, like '`Wnod`^', '`Wsmile`^', etc. They
+can be used either own their own, or with a target (for example '`Wpoint gnome`^').
+
+The '`Wsocials`^' command will show the list of socials, and giving it the name of
+a social will show what messages it would echo to people in the room.
+
+To target yourself with a social, either use your name or me/self/myself.
 
 `m# Administrative commands`^
 
-Use '`Wwho`^' to check who is in the realm. You can '`Wrestart`^' and '`Wexit`^' the whole
-server as well.
+Use '`Wwho`^' to check who is in the realm. You can '`Wrestart`^' and '`Wshutdown`^' the
+whole server as well.
 

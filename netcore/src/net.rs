@@ -23,11 +23,16 @@ pub struct NetServer {
     mio_events: mio::Events,
     ready_sockets: Vec<(Token, Ready)>,
     listener: mio::net::TcpListener,
-    sockets: BTreeMap<Token, mio::net::TcpStream>,
     tick_duration: Option<Duration>,
     last_token: usize,
     read_buffer: Box<[u8; 4096]>,
-    write_buffers: BTreeMap<Token, Vec<u8>>,
+    connections: BTreeMap<Token, NetConnection>,
+}
+
+struct NetConnection {
+    socket: mio::net::TcpStream,
+    write_buffer: Vec<u8>,
+    scheduled_disconnect: bool,
 }
 
 pub enum Ready {
@@ -51,11 +56,10 @@ impl NetServer {
             mio_events: mio::Events::with_capacity(128),
             ready_sockets: Vec::with_capacity(128),
             listener,
-            sockets: BTreeMap::new(),
             tick_duration: None,
             last_token: 2,
             read_buffer: Box::new([0; 4096]),
-            write_buffers: BTreeMap::new(),
+            connections: BTreeMap::new(),
         }
     }
 
@@ -77,9 +81,18 @@ impl NetServer {
                                     .registry()
                                     .register(&mut tcp_stream, new_token, Interest::READABLE)
                                     .unwrap();
-                                self.sockets.insert(new_token, tcp_stream);
-                                self.write_buffers.insert(new_token, Vec::new());
-                                break (Source(token.0), NetEvent::Accepted(Source(new_token.0), socket_addr));
+                                self.connections.insert(
+                                    new_token,
+                                    NetConnection {
+                                        socket: tcp_stream,
+                                        write_buffer: Vec::new(),
+                                        scheduled_disconnect: false,
+                                    },
+                                );
+                                break (
+                                    Source(token.0),
+                                    NetEvent::Accepted(Source(new_token.0), socket_addr),
+                                );
                             }
                             Err(e) if e.kind() == WouldBlock => {
                                 self.ready_sockets.pop();
@@ -88,7 +101,11 @@ impl NetServer {
                             Err(_e) => panic!("Sad..."),
                         }
                     } else {
-                        let stream = self.sockets.get_mut(&token).expect("Unregistered token");
+                        let stream = &mut self
+                            .connections
+                            .get_mut(&token)
+                            .expect("Unregistered token")
+                            .socket;
 
                         match stream.read(self.read_buffer.as_mut()) {
                             Ok(bytes) if bytes == 0 => {
@@ -118,8 +135,9 @@ impl NetServer {
                     }
                 }
                 Some((token, Ready::Writable)) => {
-                    let stream = self.sockets.get_mut(token).expect("Unregistered token");
-                    let write_buffer = self.write_buffers.get_mut(token).expect("Unregistered token");
+                    let connection = self.connections.get_mut(token).expect("Unregistered token");
+                    let stream = &mut connection.socket;
+                    let write_buffer = &mut connection.write_buffer;
 
                     match std::io::Write::write(stream, &*write_buffer) {
                         Ok(bytes) => {
@@ -129,8 +147,19 @@ impl NetServer {
 
                             if write_buffer.is_empty() {
                                 let token = *token;
-                                self.mio_poll.registry().reregister(stream, token, Interest::READABLE).unwrap();
-                                self.ready_sockets.retain(|(t, ready)| *t != token || !matches!(ready, Ready::Writable));
+                                self.mio_poll
+                                    .registry()
+                                    .reregister(stream, token, Interest::READABLE)
+                                    .unwrap();
+                                self.ready_sockets.retain(|(t, ready)| {
+                                    *t != token || !matches!(ready, Ready::Writable)
+                                });
+
+                                if connection.scheduled_disconnect {
+                                    self.mio_poll.registry().deregister(stream).unwrap();
+                                    self.disconnect(token);
+                                    break (Source(token.0), NetEvent::Disconnected);
+                                }
                             }
                         }
                         Err(e) if e.kind() == WouldBlock => {
@@ -139,7 +168,6 @@ impl NetServer {
                         }
                         Err(_e) => panic!("This is even sadder..."),
                     }
-
                 }
                 None => {
                     self.mio_poll
@@ -163,31 +191,49 @@ impl NetServer {
         }
     }
 
-    pub fn disconnect(&mut self, token: Token) {
-        self.sockets
+    fn disconnect(&mut self, token: Token) {
+        self.connections
             .remove(&token)
-            .expect("Was looking at it a second ago");
+            .expect("Invalid source provided");
         self.ready_sockets.retain(|t| t.0 != token);
-        self.write_buffers.remove(&token);
+    }
+
+    pub fn schedule_disconnect(&mut self, target: &Source) {
+        let token = Token(target.0);
+        let connection = self
+            .connections
+            .get_mut(&token)
+            .expect("Invalid source provided");
+
+        connection.scheduled_disconnect = true;
+
+        self.mio_poll
+            .registry()
+            .reregister(
+                &mut connection.socket,
+                token,
+                Interest::READABLE | Interest::WRITABLE,
+            )
+            .unwrap();
     }
 
     /// ### Panics
     /// Panics when an invalid target is provided.
     pub fn send_bytes(&mut self, target: &Source, bytes: &[u8]) {
         let token = Token(target.0);
-        let write_buffer = self
-            .write_buffers
-            .get_mut(&token)
-            .expect("Invalid source provided");
-        let socket = self
-            .sockets
+        let connection = self
+            .connections
             .get_mut(&token)
             .expect("Invalid source provided");
 
-        write_buffer.extend_from_slice(bytes);
+        connection.write_buffer.extend_from_slice(bytes);
         self.mio_poll
             .registry()
-            .reregister(socket, token, Interest::READABLE | Interest::WRITABLE)
+            .reregister(
+                &mut connection.socket,
+                token,
+                Interest::READABLE | Interest::WRITABLE,
+            )
             .unwrap();
     }
 }

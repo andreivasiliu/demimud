@@ -1,5 +1,7 @@
+use rand::random;
+
 use crate::world::{
-    Area, AreaData, Exit, ExtraDescription, Mobile, Object, ResetCommand, Room, Vnum,
+    Area, AreaData, Exit, ExtraDescription, Gender, Mobile, Object, ResetCommand, Room, Vnum,
 };
 
 use crate::file_parser::FileParser;
@@ -30,9 +32,16 @@ pub(super) fn load_area(area_file_contents: &str) -> Area {
         }
     }
 
+    let area_data = area_data.unwrap();
+    let mut rooms = rooms.unwrap();
+
+    for room in &mut rooms {
+        room.area = area_data.short_name.clone();
+    }
+
     Area {
-        area_data: area_data.unwrap(),
-        rooms: rooms.unwrap(),
+        area_data,
+        rooms,
         objects: objects.unwrap(),
         mobiles: mobiles.unwrap(),
         resets: resets.unwrap(),
@@ -108,12 +117,12 @@ fn load_mobile(parser: &mut FileParser, vnum: usize) -> Mobile {
 
         let value = match key {
             "END" | "End" => break,
-            "Name" | "ShortD" | "LongD" | "Desc" | "Race" | "Act" | "AffBy" | "Off" | "Imm"
-            | "Res" | "Vuln" | "Form" | "Part" | "StartP" | "DefPos" | "Size" | "Sex" | "MProg" => {
-                parser.read_until_tilde()
-            }
+            "Name" | "ShortD" | "LongD" | "Desc" | "Race" | "Act" | "Act2" | "AffBy" | "AffBy2"
+            | "Off" | "Imm" | "Res" | "Vuln" | "Form" | "Part" | "StartP" | "DefPos" | "Size"
+            | "Sex" | "MProg" => parser.read_until_tilde(),
             "Align" | "XPMod" | "Level" | "Hitroll" | "HitDice" | "ManaDice" | "DamDice"
-            | "DamType" | "AC" | "Wealth" | "Material" => parser.read_until_newline(),
+            | "DamType" | "AC" | "Wealth" | "Material" | "Helpgroup" | "InnBuy" | "InnSell"
+            | "InnOpen" | "InnClose" | "InnRoom" => parser.read_until_newline(),
             key => panic!("Unrecognized mobile data key: '{}'", key),
         };
 
@@ -122,6 +131,21 @@ fn load_mobile(parser: &mut FileParser, vnum: usize) -> Mobile {
             "ShortD" => mobile.short_description = value.to_string(),
             "LongD" => mobile.long_description = value.to_string(),
             "Desc" => mobile.description = value.to_string(),
+            "Sex" => {
+                mobile.gender = match value.trim_start() {
+                    "male" => Gender::Male,
+                    "female" => Gender::Female,
+                    "neutral" => Gender::Neutral,
+                    "random" => {
+                        if random() {
+                            Gender::Male
+                        } else {
+                            Gender::Female
+                        }
+                    }
+                    gender => parser.panic_on_line(&format!("Unknown sex/gender: {}", gender)),
+                }
+            }
             "Act" => {
                 for word in value.split_whitespace() {
                     match word {
@@ -170,7 +194,7 @@ fn load_object(parser: &mut FileParser, vnum: usize) -> Object {
         let value = match key {
             "END" | "End" => break,
             "Name" | "Short" | "Desc" | "ItemType" | "Material" | "Extra" | "Extra2" | "Wear"
-            | "ClassAllowances" => parser.read_until_tilde(),
+            | "ClassAllowances" | "AttuneFlags" => parser.read_until_tilde(),
             "Level" | "Cost" | "Condition" | "Asize" | "Rsize" | "Values" | "Weight" | "Affect" => {
                 parser.read_until_newline()
             }
@@ -228,9 +252,9 @@ fn load_room(parser: &mut FileParser, vnum: usize) -> Room {
         let value = match key {
             "END" | "End" => break,
             "Name" | "Desc" | "RoomFlags" | "Sector" | "RoomEcho" | "EDesc" | "EFlags"
-            | "EKeyvnum" | "EKeywords" => parser.read_until_tilde(),
+            | "EKeywords" => parser.read_until_tilde(),
             "Mana" | "Heal" | "LockerQuant" | "LockerInitRent" | "LockerOngoRent"
-            | "LockerWeight" | "LockerCapacity" | "LockerPickProof" | "Exit" => {
+            | "LockerWeight" | "LockerCapacity" | "LockerPickProof" | "Exit" | "EKeyvnum" => {
                 parser.read_until_newline()
             }
             "ExtraDesc" => {
@@ -243,6 +267,7 @@ fn load_room(parser: &mut FileParser, vnum: usize) -> Room {
         match key {
             "Name" => room.name = value.to_string(),
             "Desc" => room.description = value.to_string(),
+            "Sector" => room.sector = value.to_string(),
             "Exit" => {
                 let mut args = value.split_whitespace();
                 let name = args.next().unwrap();

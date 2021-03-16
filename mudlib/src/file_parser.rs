@@ -9,18 +9,31 @@ impl<'a> FileParser<'a> {
         let bytes_read = self.1.len() - self.0.len();
         let processed_slice = &self.1[0..bytes_read];
         let lines = processed_slice.chars().filter(|c| *c == '\n').count();
-        let columns = processed_slice.chars().rev().take_while(|c| *c != '\n').count();
+        let columns = processed_slice
+            .chars()
+            .rev()
+            .take_while(|c| *c != '\n')
+            .count();
         let last_line = &processed_slice[processed_slice.len() - columns..];
 
-        panic!("On line {}, column {}: {}\nLast line:\n{}\n", lines+1, columns, message, last_line);
+        panic!(
+            "On line {}, column {}: {}\nLast line:\n{}\n",
+            lines + 1,
+            columns,
+            message,
+            last_line
+        );
     }
 
     pub fn read_section(&mut self) -> &'a str {
-        let start = self.0.find(|c:char| !c.is_whitespace()).unwrap();
+        let start = self.0.find(|c: char| !c.is_whitespace()).unwrap();
         let end = self.0[start..].find(|c: char| c.is_whitespace()).unwrap();
 
-        if &self.0[start..start+1] != "#" {
-            self.panic_on_line(&format!("Expected '#', got '{}'", &self.0[start..start+1]))
+        if &self.0[start..start + 1] != "#" {
+            self.panic_on_line(&format!(
+                "Expected '#', got '{}'",
+                &self.0[start..start + 1]
+            ))
         }
 
         let mut section = &self.0[start + 1..start + end];
@@ -67,7 +80,9 @@ impl<'a> FileParser<'a> {
 
     pub fn read_until_newline(&mut self) -> &'a str {
         let start = 0;
-        let end = self.0[start..].find(|c: char| c == '\n' || c == '\r').unwrap();
+        let end = self.0[start..]
+            .find(|c: char| c == '\n' || c == '\r')
+            .unwrap();
 
         let section = &self.0[start..start + end];
         self.0 = &self.0[start + end..];

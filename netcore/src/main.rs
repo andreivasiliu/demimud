@@ -14,7 +14,7 @@ fn main() {
         let mudlib_original = library_filename("target/debug/mudlib");
         let mudlib_backup = library_filename("target/debug/backup_mudlib");
         let mudlib = library_filename("target/debug/live_mudlib");
-        
+
         std::fs::copy(mudlib_original, &mudlib).expect("Could not copy mudlib");
 
         let entry_code = match entry_initializer.take() {

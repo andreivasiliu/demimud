@@ -3,6 +3,7 @@ use std::{borrow::Cow, collections::HashMap};
 use lazy_static::lazy_static;
 
 static COLOR_CODES: &[(char, &'static str)] = &[
+    ('d', "\x1b[0;30m"),
     ('r', "\x1b[0;31m"),
     ('g', "\x1b[0;32m"),
     ('y', "\x1b[0;33m"),
@@ -10,6 +11,7 @@ static COLOR_CODES: &[(char, &'static str)] = &[
     ('m', "\x1b[0;35m"),
     ('c', "\x1b[0;36m"),
     ('w', "\x1b[0;37m"),
+    ('D', "\x1b[1;30m"),
     ('R', "\x1b[1;31m"),
     ('G', "\x1b[1;32m"),
     ('Y', "\x1b[1;33m"),
@@ -36,7 +38,7 @@ pub fn colorize(text: &str) -> Cow<'_, str> {
     if !text.contains('`') {
         return Cow::Borrowed(text);
     };
-    
+
     let mut buffer = String::new();
     let mut processed = 0;
 
@@ -46,10 +48,10 @@ pub fn colorize(text: &str) -> Cow<'_, str> {
             None => break,
         };
 
-        buffer.push_str(&text[processed..processed+backtick]);
+        buffer.push_str(&text[processed..processed + backtick]);
         processed += backtick;
 
-        assert_eq!(&text[processed..processed+1], "`");
+        assert_eq!(&text[processed..processed + 1], "`");
         processed += 1;
 
         let color_character = if let Some(c) = text[processed..].chars().next() {
@@ -59,9 +61,7 @@ pub fn colorize(text: &str) -> Cow<'_, str> {
             '^'
         };
 
-        let color_code = COLOR_CODE_MAP
-            .get(&color_character)
-            .unwrap_or(&"\x1b[0m");
+        let color_code = COLOR_CODE_MAP.get(&color_character).unwrap_or(&"\x1b[0m");
 
         buffer.push_str(color_code);
     }

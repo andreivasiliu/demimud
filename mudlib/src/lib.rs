@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, net::SocketAddr, path::Path};
 
 use colors::colorize;
 use libtelnet_rs::{events::TelnetEvents, Parser};
+use mapper::make_map;
 use players::Players;
 use serde::{Deserialize, Serialize};
 
@@ -11,11 +12,11 @@ use state::WorldState;
 mod colors;
 mod file_parser;
 mod load;
+mod mapper;
 mod players;
 mod socials;
 mod state;
 mod world;
-mod mapper;
 
 #[derive(Serialize, Deserialize)]
 struct ConnectionState {
@@ -28,6 +29,7 @@ struct Connection {
     address: Option<SocketAddr>,
     command_buffer: String,
     sent_command: bool,
+    no_prompt: bool,
 }
 
 #[no_mangle]
@@ -62,12 +64,10 @@ pub extern "C" fn do_things(net_server: &mut NetServer, entry_code: EntryCode) -
 
     let mut telnet_parser = Parser::new();
 
-    let area_files = &["mekali.are", "mekapark.are", "links.are", "wild_1.are"];
-    let world = world::load_world(Path::new("mudlib/area"), area_files);
+    let world = world::load_world(Path::new("mudlib/area"));
     let socials = socials::load_socials(Path::new("mudlib/socials.txt"));
     let mut world_state = state::create_state(world, socials);
     world_state.reset_world();
-    world_state.add_player("nobody".to_string());
 
     for connection in connection_state.connections.values() {
         if let Some(player) = &connection.player {
@@ -88,13 +88,18 @@ pub extern "C" fn do_things(net_server: &mut NetServer, entry_code: EntryCode) -
                 println!("Accepted {}", address);
 
                 net_server.send_bytes(&new_source, b"Welcome to DemiMUD!\r\n");
-                net_server.send_bytes(&new_source, b"nobody> ");
+                net_server.send_bytes(
+                    &new_source,
+                    colorize("Set your name with '`Wname YourName`^' to log in.\r\n").as_bytes(),
+                );
+                net_server.send_bytes(&new_source, b"> ");
 
                 let connection = Connection {
-                    player: Some("nobody".into()),
+                    player: None,
                     address: Some(address),
-                    command_buffer: Default::default(),
-                    sent_command: Default::default(),
+                    command_buffer: String::new(),
+                    sent_command: false,
+                    no_prompt: false,
                 };
 
                 connection_state
@@ -102,7 +107,19 @@ pub extern "C" fn do_things(net_server: &mut NetServer, entry_code: EntryCode) -
                     .insert(new_source.0, connection);
             }
             netcore::NetEvent::Disconnected => {
-                connection_state.connections.remove(&source.0);
+                let connection = connection_state
+                    .connections
+                    .remove(&source.0)
+                    .expect("Unregistered source");
+                if let Some(player) = &connection.player {
+                    println!(
+                        "Player {} disconnected from {}.",
+                        player,
+                        connection.address.unwrap()
+                    );
+                } else {
+                    println!("Disconnected {}", connection.address.unwrap());
+                }
             }
             netcore::NetEvent::Received(bytes) => {
                 for event in telnet_parser.receive(bytes) {
@@ -138,40 +155,46 @@ pub extern "C" fn do_things(net_server: &mut NetServer, entry_code: EntryCode) -
 
                                 let words: Vec<&str> = command.split_whitespace().collect();
 
+                                let mut echo = |message: &str| {
+                                    net_server.send_bytes(&source, message.as_bytes());
+                                };
+
                                 match words.as_slice() {
-                                    &["restart"] => {
-                                        net_server.send_bytes(&source, b"Restarting...\r\n");
-                                        schedule_restart = true;
-                                    }
-                                    &["exit"] => {
-                                        schedule_exit = true;
-                                    }
                                     &["who"] => {
-                                        net_server.send_bytes(
-                                            &source,
-                                            b"Players currently connected to the realm:\r\n",
-                                        );
+                                        echo("Players currently connected to the realm:\r\n");
                                         for (target, connection) in &connection_state.connections {
                                             if let Some(address) = &connection.address {
-                                                net_server.send_bytes(
-                                                    &source,
-                                                    format!(
-                                                        "{}: {} ({})\r\n",
-                                                        target,
-                                                        connection
-                                                            .player
-                                                            .as_deref()
-                                                            .unwrap_or("unset"),
-                                                        address
-                                                    )
-                                                    .as_bytes(),
-                                                );
+                                                echo(&colorize(&format!(
+                                                    "{}: `M{}`^ ({})\r\n",
+                                                    target,
+                                                    connection.player.as_deref().unwrap_or("unset"),
+                                                    address
+                                                )));
                                             }
                                         }
-                                        continue;
+                                    }
+                                    &["exit"] => {
+                                        echo("Bye!\r\n");
+                                        net_server.schedule_disconnect(&source);
+                                        connection.no_prompt = true;
+                                    }
+                                    command_words if connection.player.is_none() => {
+                                        process_login_command(
+                                            echo,
+                                            connection,
+                                            &mut world_state,
+                                            command_words,
+                                        );
+                                    }
+                                    &["restart"] => {
+                                        echo("Restarting...\r\n");
+                                        schedule_restart = true;
+                                    }
+                                    &["shutdown"] => {
+                                        schedule_exit = true;
                                     }
                                     words => {
-                                        process_command(&mut world_state, connection, words);
+                                        process_command(&mut world_state, words);
                                     }
                                 }
                             }
@@ -228,6 +251,49 @@ pub extern "C" fn do_things(net_server: &mut NetServer, entry_code: EntryCode) -
     }
 }
 
+fn process_login_command<F: FnMut(&str)>(
+    mut echo: F,
+    connection: &mut Connection,
+    world_state: &mut WorldState,
+    command_words: &[&str],
+) -> () {
+    match command_words {
+        &["name", name] => {
+            println!(
+                "Player {} logged in from {}.",
+                name,
+                connection.address.as_ref().unwrap()
+            );
+            connection.player = Some(name.to_string());
+            world_state.players.current_player.clear();
+            world_state.players.current_player.push_str(name);
+            world_state.add_player(name.to_string());
+            world_state.players.current().echo("Name set. Welcome!\r\n");
+            use inflector::Inflector;
+            use std::fmt::Write;
+            write!(
+                world_state.players.others(),
+                "{} materializes from thin air.\r\n",
+                name.to_title_case()
+            )
+            .unwrap();
+        }
+        &["name", ..] => {
+            echo(&colorize(
+                "The '`Wname`^' command can only be used with one argument after it.\r\n",
+            ));
+        }
+        &[] => {}
+        _any_command => {
+            echo(&colorize(
+                "But first, who are you? Type '`Wname SomeName`^' \
+                to set your name, or '`Wwho`^' to\r\n\
+                see the names of who is logged in.\r\n",
+            ));
+        }
+    }
+}
+
 fn send_echoes(
     net_server: &mut NetServer,
     players: &mut Players,
@@ -250,11 +316,16 @@ fn send_echoes(
                 net_server.send_bytes(&target, colorize(echoes).as_bytes());
 
                 // Also send them a prompt
-                if let Some(player) = &connection.player {
-                    net_server.send_bytes(&target, player.as_bytes());
+                if !connection.no_prompt {
+                    if let Some(player) = &connection.player {
+                        net_server.send_bytes(&target, player.as_bytes());
+                    }
+                    net_server.send_bytes(&target, b"> ");
                 }
-                net_server.send_bytes(&target, b"> ");
             }
+        } else if connection.sent_command && !connection.no_prompt {
+            let target = Source(*target);
+            net_server.send_bytes(&target, b"> ");
         }
     }
 
@@ -267,20 +338,9 @@ fn send_echoes(
     }
 }
 
-fn process_command(world_state: &mut WorldState, connection: &mut Connection, words: &[&str]) {
+fn process_command(world_state: &mut WorldState, words: &[&str]) {
     use std::fmt::Write;
     match words {
-        &["name", name] => {
-            connection.player = Some(name.to_owned());
-            world_state.add_player(name.to_string());
-            world_state
-                .players
-                .current()
-                .echo("Someone's soul just exited your body.\r\n");
-            world_state.players.current_player.clear();
-            world_state.players.current_player.push_str(name);
-            world_state.players.current().echo("Name changed.\r\n");
-        }
         &["look"] | &["l"] => {
             world_state.do_look();
         }
@@ -295,8 +355,29 @@ fn process_command(world_state: &mut WorldState, connection: &mut Connection, wo
 
             world_state.players.current().echo(help_text);
         }
+        &["map"] => {
+            let location = world_state.players.locations[&world_state.players.current_player];
+            let map = make_map(&world_state.world, location);
+            world_state.players.current().echo(map);
+        }
+        &["exits"] => {
+            world_state.do_exits();
+        }
+        &["recall"] => {
+            world_state.do_recall(None);
+        }
+        &["recall", location] => {
+            world_state.do_recall(Some(location));
+        }
+        &["socials"] => {
+            world_state.do_socials(None);
+        }
+        &["socials", social] => {
+            world_state.do_socials(Some(social));
+        }
         &[direction] if world_state.do_move(direction) => (),
-        &[social] if world_state.socials.do_act(&mut world_state.players, social) => (),
+        &[social] if world_state.do_act(social, None) => (),
+        &[social, target] if world_state.do_act(social, Some(target)) => (),
         &[cmd_word, ..] => {
             write!(
                 world_state.players.current(),
