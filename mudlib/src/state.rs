@@ -18,7 +18,9 @@ struct RoomState {
 }
 
 #[derive(Default, Clone)]
-struct PlayerState {}
+struct PlayerState {
+    character: CharacterState,
+}
 
 #[derive(Default, Clone)]
 struct ObjectState {
@@ -28,6 +30,13 @@ struct ObjectState {
 #[derive(Default, Clone)]
 struct MobileState {
     vnum: Vnum,
+    character: CharacterState,
+}
+
+#[derive(Default, Clone)]
+struct CharacterState {
+    inventory: Vec<ObjectState>,
+    equipment: Vec<(String, ObjectState)>,
 }
 
 pub(super) struct WorldState {
@@ -69,6 +78,8 @@ impl WorldState {
         }
 
         for (_area_data, area_resets) in &self.world.areas {
+            let mut last_mobile = None;
+
             for reset_command in area_resets {
                 match reset_command {
                     ResetCommand::Mob {
@@ -78,7 +89,11 @@ impl WorldState {
                         room_limit: _,
                     } => {
                         let room = &mut self.rooms[r_num.0];
-                        room.mobiles.push(MobileState { vnum: *m_num });
+                        room.mobiles.push(MobileState {
+                            vnum: *m_num,
+                            character: Default::default(),
+                        });
+                        last_mobile = Some((r_num.0, room.mobiles.len() - 1));
                     }
                     ResetCommand::Object {
                         o_num,
@@ -89,6 +104,29 @@ impl WorldState {
                         room.objects.push(ObjectState { vnum: *o_num });
                     }
                     ResetCommand::Door { .. } => {}
+                    ResetCommand::Give {
+                        o_num,
+                        global_limit: _,
+                    } => {
+                        let last_mobile = last_mobile.unwrap();
+                        let room = &mut self.rooms[last_mobile.0];
+                        let mob = &mut room.mobiles[last_mobile.1];
+
+                        mob.character.inventory.push(ObjectState { vnum: *o_num })
+                    }
+                    ResetCommand::Equip {
+                        o_num,
+                        global_limit: _,
+                        location,
+                    } => {
+                        let last_mobile = last_mobile.unwrap();
+                        let room = &mut self.rooms[last_mobile.0];
+                        let mob = &mut room.mobiles[last_mobile.1];
+
+                        mob.character
+                            .equipment
+                            .push((location.clone(), ObjectState { vnum: *o_num }));
+                    }
                 }
             }
         }
@@ -169,9 +207,12 @@ impl WorldState {
 
     pub(super) fn add_player(&mut self, name: String) {
         if !self.players.locations.contains_key(&name) {
-            self.rooms[23611]
-                .players
-                .insert(name.clone(), PlayerState {});
+            self.rooms[23611].players.insert(
+                name.clone(),
+                PlayerState {
+                    character: Default::default(),
+                },
+            );
             self.players.locations.insert(name.clone(), Vnum(23611));
         }
         if !self.players.echoes.contains_key(&name) {
@@ -208,8 +249,28 @@ impl WorldState {
             Target::Object(object) => {
                 return Some(object.description.clone() + "\r\n");
             }
-            Target::Mobile(mobile) => {
-                return Some(mobile.description.clone());
+            Target::Mobile(mobile, mobile_state) => {
+                let mut description = String::new();
+                description += &mobile.description;
+                let mut first = true;
+                for item in &mobile_state.character.inventory {
+                    if first {
+                        first = false;
+                        description += &format!("{} is holding:\r\n", &mobile.short_description.to_sentence_case());
+                    }
+                    let object = self.world.object(item.vnum);
+                    description += &format!("`c{}`^\r\n", object.short_description);
+                }
+                let mut first = true;
+                for (location, item) in &mobile_state.character.equipment {
+                    if first {
+                        first = false;
+                        description += &format!("{} is wearing:\r\n", &mobile.short_description.to_sentence_case());
+                    }
+                    let object = self.world.object(item.vnum);
+                    description += &format!(" `S[`y{}`S]:`^ {}`^\r\n", location, object.short_description);
+                }
+                return Some(description);
             }
             Target::Player(player) => {
                 return Some(format!(
@@ -512,7 +573,7 @@ impl WorldState {
         let player = self.players.current_player.to_title_case();
 
         if let Some(target) = target {
-            let target = find_target(&self.players, &self.rooms, &self.world, target);
+            let target = find_target(&self.players, &mut self.rooms, &self.world, target);
             let player_title;
             let mut player_target = None;
             let objective_pronoun;
@@ -540,7 +601,7 @@ impl WorldState {
                     possessive_pronoun = "its";
                     &object.short_description
                 }
-                Target::Mobile(mobile) => {
+                Target::Mobile(mobile, _state) => {
                     objective_pronoun = match mobile.gender {
                         Gender::Male => "him",
                         Gender::Female => "her",
@@ -641,13 +702,132 @@ impl WorldState {
 
         true
     }
+
+    pub fn do_inventory(&mut self) {
+        let location = self.players.locations[&self.players.current_player];
+        let room = &self.rooms[location.0];
+        let player = &room.players[&self.players.current_player];
+
+        let mut output = self.players.current();
+        output.echo("You are holding:\r\n    ");
+        let mut first = true;
+        let mut column = 4;
+        for item in &player.character.inventory {
+            if first {
+                first = false;
+            } else {
+                output.echo(", ");
+                column += 2;
+            }
+
+            if column > 72 {
+                output.echo("\r\n    ");
+                column = 4;
+            }
+
+            let object = self.world.object(item.vnum);
+            output.echo(&object.short_description);
+            column += object.short_description.len();
+        }
+        output.echo("\r\n");
+    }
+
+    pub fn do_get(&mut self, object_name: Option<&str>) {
+        let object_name = match object_name {
+            Some(name) => name,
+            None => {
+                self.players.current().echo("Get what?\r\n");
+                return;
+            }
+        };
+
+        let location = self.players.locations[&self.players.current_player];
+        let room = &mut self.rooms[location.0];
+        let world = &self.world;
+
+        let object_index = room.objects.iter().position(|obj| {
+            let object = world.object(obj.vnum);
+            object
+                .name
+                .split_whitespace()
+                .find(|&word| word == object_name)
+                .is_some()
+        });
+        let object_index = match object_index {
+            Some(index) => index,
+            None => {
+                self.players
+                    .current()
+                    .echo("You don't see anything named like that in the room.\r\n");
+                return;
+            }
+        };
+        let object_state = room.objects.remove(object_index);
+        let object = self.world.object(object_state.vnum);
+        let player = room.players.get_mut(&self.players.current_player).unwrap();
+        player.character.inventory.push(object_state);
+        let player = self.players.current_player.to_title_case();
+        self.players
+            .current()
+            .echo(&format!("You pick up {}.\r\n", object.short_description));
+        self.players.others().echo(&format!(
+            "{} picks up {}.\r\n",
+            player, object.short_description
+        ));
+    }
+
+    pub fn do_drop(&mut self, object_name: Option<&str>) {
+        let object_name = match object_name {
+            Some(name) => name,
+            None => {
+                self.players.current().echo("Drop what?\r\n");
+                return;
+            }
+        };
+
+        let location = self.players.locations[&self.players.current_player];
+        let room = &mut self.rooms[location.0];
+        let world = &self.world;
+        let player_state = room.players.get_mut(&self.players.current_player).unwrap();
+
+        let object_index = player_state.character.inventory.iter().position(|obj| {
+            let object = world.object(obj.vnum);
+            object
+                .name
+                .split_whitespace()
+                .find(|&word| word == object_name)
+                .is_some()
+        });
+        let object_index = match object_index {
+            Some(index) => index,
+            None => {
+                self.players
+                    .current()
+                    .echo("You aren't holding anything named like that.\r\n");
+                return;
+            }
+        };
+        let object_state = player_state.character.inventory.remove(object_index);
+        let vnum = object_state.vnum;
+        room.objects.push(object_state);
+
+        let object = self.world.object(vnum);
+        let player = self.players.current_player.to_title_case();
+        self.players
+            .current()
+            .echo(&format!("You drop {}.\r\n", object.short_description));
+        self.players.others().echo(&format!(
+            "{} drops {}.\r\n",
+            player, object.short_description
+        ));
+    }
 }
 
 enum Target<'a> {
     Me,
     Exit(&'a Exit),
     Object(&'a Object),
-    Mobile(&'a Mobile),
+    Mobile(&'a Mobile, &'a MobileState),
     Player(&'a str),
     ObjectExtraDescription(&'a Object, &'a ExtraDescription),
     RoomExtraDescription(&'a Room, &'a ExtraDescription),
@@ -711,7 +891,7 @@ fn find_target<'a>(
             .find(|&word| word == target)
             .is_some()
         {
-            return Target::Mobile(&mobile);
+            return Target::Mobile(&mobile, &mobile_state);
         }
     }
 

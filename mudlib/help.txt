@@ -29,6 +29,13 @@ a social will show what messages it would echo to people in the room.
 
 To target yourself with a social, either use your name or me/self/myself.
 
+`m# Inventory`^
+
+Each player and mobile has an inventory to store items; to check what items you
+are holding, use '`Winventory`^' (or '`Winv`^' or '`Wi`^' for short).
+
+To pick up or drop items from the ground, use '`Wget <name>`^' and '`Wdrop <name>`^'.
+
 `m# Administrative commands`^
 
 Use '`Wwho`^' to check who is in the realm. You can '`Wrestart`^' and '`Wshutdown`^' the

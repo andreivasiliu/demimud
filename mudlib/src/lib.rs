@@ -375,6 +375,21 @@ fn process_command(world_state: &mut WorldState, words: &[&str]) {
         &["socials", social] => {
             world_state.do_socials(Some(social));
         }
+        &["get"] => {
+            world_state.do_get(None);
+        }
+        &["get", item] => {
+            world_state.do_get(Some(item));
+        }
+        &["drop"] => {
+            world_state.do_drop(None);
+        }
+        &["drop", item] => {
+            world_state.do_drop(Some(item));
+        }
+        &["i"] | &["inv"] | &["inventory"] => {
+            world_state.do_inventory();
+        }
         &[direction] if world_state.do_move(direction) => (),
         &[social] if world_state.do_act(social, None) => (),
         &[social, target] if world_state.do_act(social, Some(target)) => (),

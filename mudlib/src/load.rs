@@ -343,6 +343,34 @@ fn load_resets(parser: &mut FileParser) -> Vec<ResetCommand> {
                     room_limit,
                 })
             }
+            "G" => {
+                let zero = parser.read_word();
+                let o_num = parser.read_word().parse().unwrap();
+                let global_limit = parser.read_word().parse().unwrap();
+
+                assert_eq!(zero, "0");
+
+                resets.push(ResetCommand::Give {
+                    o_num: Vnum(o_num),
+                    global_limit,
+                })
+            }
+            "E" => {
+                let zero = parser.read_word();
+                let o_num = parser.read_word().parse().unwrap();
+                let global_limit = parser.read_word().parse().unwrap();
+                let mut location = parser.read_word().to_string();
+
+                assert_eq!(location.pop(), Some('~'));
+
+                assert_eq!(zero, "0");
+
+                resets.push(ResetCommand::Equip {
+                    o_num: Vnum(o_num),
+                    global_limit,
+                    location,
+                })
+            }
             _ => {
                 parser.read_until_newline();
             }

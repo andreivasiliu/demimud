@@ -110,6 +110,15 @@ pub(super) enum ResetCommand {
         direction: String,
         door_flags: Vec<String>,
     },
+    Give {
+        o_num: Vnum,
+        global_limit: i16,
+    },
+    Equip {
+        o_num: Vnum,
+        global_limit: i16,
+        location: String,
+    },
 }
 
 #[derive(Serialize, Deserialize)]

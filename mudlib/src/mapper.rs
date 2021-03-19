@@ -117,7 +117,7 @@ pub(crate) fn make_map(world: &World, vnum: Vnum) -> String {
             let map_position = (row * 2 + 1) * map_columns + (column * 2 + 1);
 
             let color = match room.sector.as_str() {
-                "city" => b'D',
+                "city" => b'S',
                 "inside" => b'y',
                 "field" => b'Y',
                 "forest" => b'G',
@@ -125,8 +125,8 @@ pub(crate) fn make_map(world: &World, vnum: Vnum) -> String {
                 "noswim" => b'b',
                 "hills" => b'y',
                 "desert" => b'y',
-                "mountain" => b'D',
-                "cave" => b'D',
+                "mountain" => b'S',
+                "cave" => b'S',
                 "swamp" => b'y',
 
                 sector => {

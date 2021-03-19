@@ -3,7 +3,7 @@ use std::{borrow::Cow, collections::HashMap};
 use lazy_static::lazy_static;
 
 static COLOR_CODES: &[(char, &'static str)] = &[
-    ('d', "\x1b[0;30m"),
+    ('s', "\x1b[0;30m"),
     ('r', "\x1b[0;31m"),
     ('g', "\x1b[0;32m"),
     ('y', "\x1b[0;33m"),
@@ -11,7 +11,7 @@ static COLOR_CODES: &[(char, &'static str)] = &[
     ('m', "\x1b[0;35m"),
     ('c', "\x1b[0;36m"),
     ('w', "\x1b[0;37m"),
-    ('D', "\x1b[1;30m"),
+    ('S', "\x1b[1;30m"),
     ('R', "\x1b[1;31m"),
     ('G', "\x1b[1;32m"),
     ('Y', "\x1b[1;33m"),
@@ -20,6 +20,7 @@ static COLOR_CODES: &[(char, &'static str)] = &[
     ('C', "\x1b[1;36m"),
     ('W', "\x1b[1;37m"),
     ('^', "\x1b[0m"),
+    ('1', "\r\n"),
 ];
 
 lazy_static! {
