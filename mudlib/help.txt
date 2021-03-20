@@ -39,5 +39,5 @@ To pick up or drop items from the ground, use '`Wget <name>`^' and '`Wdrop <name
 `m# Administrative commands`^
 
 Use '`Wwho`^' to check who is in the realm. You can '`Wrestart`^' and '`Wshutdown`^' the
-whole server as well.
+whole server as well, and also crash it with the '`Wpanic`^' command.
 

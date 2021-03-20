@@ -213,3 +213,57 @@ impl World {
         }
     }
 }
+
+pub(crate) fn long_direction(direction: &str) -> &str {
+    match direction {
+        "n" => "north",
+        "e" => "east",
+        "s" => "south",
+        "w" => "west",
+        "u" => "up",
+        "d" => "down",
+        "ne" => "northeast",
+        "se" => "southeast",
+        "sw" => "southwest",
+        "nw" => "northwest",
+        dir => dir,
+    }
+}
+
+pub(crate) fn short_direction(direction: &str) -> &str {
+    match direction {
+        "north" => "n",
+        "east" => "e",
+        "south" => "s",
+        "west" => "w",
+        "up" => "u",
+        "down" => "d",
+        "northeast" => "n",
+        "southeast" => "s",
+        "southwest" => "s",
+        "northwest" => "n",
+        dir => dir,
+    }
+}
+
+pub(crate) fn opposite_direction(direction: &str) -> &str {
+    match direction {
+        "north" => "south",
+        "east" => "west",
+        "south" => "south",
+        "west" => "east",
+        "up" => "down",
+        "down" => "up",
+        "northeast" => "southwest",
+        "southeast" => "northwest",
+        "southwest" => "northeast",
+        "northwest" => "southeast",
+        name => name,
+    }
+}
+
+pub(crate) fn common_direction(direction: &str) -> bool {
+    let common_directions = &["n", "e", "s", "w", "u", "d", "ne", "se", "sw", "nw"];
+
+    common_directions.contains(&short_direction(direction))
+}

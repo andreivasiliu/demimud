@@ -27,6 +27,7 @@ pub struct NetServer {
     last_token: usize,
     read_buffer: Box<[u8; 4096]>,
     connections: BTreeMap<Token, NetConnection>,
+    pending_errors: BTreeMap<Token, NetEvent<'static>>,
 }
 
 struct NetConnection {
@@ -60,6 +61,7 @@ impl NetServer {
             last_token: 2,
             read_buffer: Box::new([0; 4096]),
             connections: BTreeMap::new(),
+            pending_errors: BTreeMap::new(),
         }
     }
 
@@ -68,6 +70,13 @@ impl NetServer {
     }
 
     pub fn receive_event(&mut self) -> (Source, NetEvent<'_>) {
+        if let Some(pending_token) = self.pending_errors.keys().next() {
+            let token = *pending_token;
+            let event = self.pending_errors.remove(&token)
+                .expect("Key checked via iterator");
+            return (Source(token.0), event);
+        }
+
         // TODO: Check interrupt
         loop {
             match self.ready_sockets.first() {
@@ -135,38 +144,10 @@ impl NetServer {
                     }
                 }
                 Some((token, Ready::Writable)) => {
-                    let connection = self.connections.get_mut(token).expect("Unregistered token");
-                    let stream = &mut connection.socket;
-                    let write_buffer = &mut connection.write_buffer;
-
-                    match std::io::Write::write(stream, &*write_buffer) {
-                        Ok(bytes) => {
-                            assert_ne!(bytes, 0, "Wrote zero bytes?");
-
-                            write_buffer.drain(..bytes);
-
-                            if write_buffer.is_empty() {
-                                let token = *token;
-                                self.mio_poll
-                                    .registry()
-                                    .reregister(stream, token, Interest::READABLE)
-                                    .unwrap();
-                                self.ready_sockets.retain(|(t, ready)| {
-                                    *t != token || !matches!(ready, Ready::Writable)
-                                });
-
-                                if connection.scheduled_disconnect {
-                                    self.mio_poll.registry().deregister(stream).unwrap();
-                                    self.disconnect(token);
-                                    break (Source(token.0), NetEvent::Disconnected);
-                                }
-                            }
-                        }
-                        Err(e) if e.kind() == WouldBlock => {
-                            self.ready_sockets.pop();
-                            continue;
-                        }
-                        Err(_e) => panic!("This is even sadder..."),
+                    let token = *token;
+                    match self.write_bytes(&token) {
+                        Some(event) => break (Source(token.0), event),
+                        None => continue,
                     }
                 }
                 None => {
@@ -200,6 +181,12 @@ impl NetServer {
 
     pub fn schedule_disconnect(&mut self, target: &Source) {
         let token = Token(target.0);
+
+        if self.pending_errors.get(&token).is_some() {
+            // It's already pending a different kind of disconnect.
+            return;
+        }
+        
         let connection = self
             .connections
             .get_mut(&token)
@@ -217,10 +204,54 @@ impl NetServer {
             .unwrap();
     }
 
+    fn write_bytes(&mut self, token: &Token) -> Option<NetEvent<'static>> {
+        let connection = self.connections.get_mut(token).expect("Unregistered token");
+        let stream = &mut connection.socket;
+        let write_buffer = &mut connection.write_buffer;
+
+        match std::io::Write::write(stream, &*write_buffer) {
+            Ok(bytes) => {
+                assert_ne!(bytes, 0, "Wrote zero bytes?");
+
+                write_buffer.drain(..bytes);
+
+                if write_buffer.is_empty() {
+                    let token = *token;
+                    self.mio_poll
+                        .registry()
+                        .reregister(stream, token, Interest::READABLE)
+                        .unwrap();
+                    self.ready_sockets
+                        .retain(|(t, ready)| *t != token || !matches!(ready, Ready::Writable));
+
+                    if connection.scheduled_disconnect {
+                        self.mio_poll.registry().deregister(stream).unwrap();
+                        self.disconnect(token);
+                        return Some(NetEvent::Disconnected);
+                    }
+                }
+            }
+            Err(e) if e.kind() == WouldBlock => {
+                self.ready_sockets.pop();
+            }
+            Err(_e) => panic!("This is even sadder..."),
+        }
+
+        None
+    }
+
     /// ### Panics
     /// Panics when an invalid target is provided.
     pub fn send_bytes(&mut self, target: &Source, bytes: &[u8]) {
         let token = Token(target.0);
+
+        // Check if the token is still valid; it may no longer exist if there
+        // was an error during a flush, and the Disconnect event was not yet
+        // sent.
+        if self.pending_errors.get(&token).is_some() {
+            return;
+        }
+
         let connection = self
             .connections
             .get_mut(&token)
@@ -235,5 +266,19 @@ impl NetServer {
                 Interest::READABLE | Interest::WRITABLE,
             )
             .unwrap();
+    }
+
+    /// ### Panics
+    /// Panics when an invalid target is provided
+    pub fn try_flush(&mut self, target: &Source) {
+        let token = Token(target.0);
+
+        if self.pending_errors.get(&token).is_some() {
+            return;
+        }
+
+        if let Some(event) = self.write_bytes(&token) {
+            self.pending_errors.insert(token, event);
+        };
     }
 }

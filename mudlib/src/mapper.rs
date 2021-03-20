@@ -10,7 +10,7 @@ enum MapElement {
 }
 
 const EXITS: &[(u8, i8, i8, &'static str)] = &[
-    // Character, row offset, column offset
+    // Character, row offset, column offset, name
     (b'|', -1, 0, "north"),
     (b'/', -1, 1, "northeast"),
     (b'-', 0, 1, "east"),
