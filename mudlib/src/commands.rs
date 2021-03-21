@@ -1,11 +1,19 @@
 use inflector::Inflector;
 
-use crate::{players::Players, socials::Socials, state::{RoomState, Target, WorldState, find_description, find_target}, world::{Gender, Vnum, World}};
-use crate::world::{long_direction, opposite_direction, common_direction};
-use crate::state::{change_player_location};
-use crate::mapper::make_map;
+use crate::state::change_player_location;
+use crate::world::{common_direction, long_direction, opposite_direction};
+use crate::{
+    echo,
+    entity::{EntityId, EntityWorld},
+    players::Players,
+    socials::Socials,
+    state::{find_description, find_target, RoomState, Target, WorldState},
+    world::{Gender, Vnum, World},
+    acting::EscapeVariables,
+};
+use crate::{entity::Found, mapper::make_map};
 
-struct Actor<'w, 's, 'p> {
+struct Agent<'w, 's, 'p> {
     // Info
     world: &'w World,
     socials: &'w Socials,
@@ -15,8 +23,64 @@ struct Actor<'w, 's, 'p> {
     rooms: &'s mut [RoomState],
 }
 
+struct EntityAgent<'e, 'p> {
+    entity_world: &'e mut EntityWorld,
+    players: &'p mut Players,
+
+    entity_id: EntityId,
+}
+
+fn process_agent_command(agent: &mut EntityAgent, words: &[&str]) -> bool {
+    match words {
+        &["elook"] | &["el"] => {
+            agent.do_look();
+        }
+        &["elook", target] | &["el", target] | &["elook", "at", target] | &["el", "at", target] => {
+            agent.do_look_at(target);
+        }
+        &["force", target, ref victim_words @ ..] => {
+            agent.force(target, victim_words);
+        }
+        &["esay", ref message @ ..] => {
+            agent.do_say(&message.join(" "));
+        }
+        _ => return false,
+    };
+
+    true
+}
+
 pub(crate) fn process_command(world_state: &mut WorldState, words: &[&str]) {
-    let mut actor = actor(world_state);
+    let world = &mut world_state.entity_world;
+    let player_id = world.player_entity_id(&world_state.players.current_player);
+
+    let player_id = match player_id {
+        Some(id) => id,
+        None => {
+            world_state
+                .players
+                .current()
+                .echo("But you don't seem to have a body.");
+            return;
+        }
+    };
+
+    let mut agent = EntityAgent {
+        entity_world: &mut world_state.entity_world,
+        players: &mut world_state.players,
+        entity_id: player_id,
+    };
+
+    if process_agent_command(&mut agent, words) {
+        return;
+    }
+
+    let mut agent = Agent {
+        world: &world_state.world,
+        socials: &world_state.socials,
+        rooms: &mut world_state.rooms,
+        players: &mut world_state.players,
+    };
 
     use std::fmt::Write;
     match words {
@@ -24,13 +88,13 @@ pub(crate) fn process_command(world_state: &mut WorldState, words: &[&str]) {
             panic!("Oh no! I panicked!");
         }
         &["look"] | &["l"] => {
-            actor.do_look();
+            agent.do_look();
         }
         &["look", target] | &["l", target] | &["look", "at", target] | &["l", "at", target] => {
-            actor.do_look_at(target);
+            agent.do_look_at(target);
         }
         &["say", ref message @ ..] => {
-            actor.do_say(&message.join(" "));
+            agent.do_say(&message.join(" "));
         }
         &["help"] => {
             let help_text = include_str!("../help.txt");
@@ -43,38 +107,38 @@ pub(crate) fn process_command(world_state: &mut WorldState, words: &[&str]) {
             world_state.players.current().echo(map);
         }
         &["exits"] => {
-            actor.do_exits();
+            agent.do_exits();
         }
         &["recall"] => {
-            actor.do_recall(None);
+            agent.do_recall(None);
         }
         &["recall", location] => {
-            actor.do_recall(Some(location));
+            agent.do_recall(Some(location));
         }
         &["socials"] => {
-            actor.do_socials(None);
+            agent.do_socials(None);
         }
         &["socials", social] => {
-            actor.do_socials(Some(social));
+            agent.do_socials(Some(social));
         }
         &["get"] => {
-            actor.do_get(None);
+            agent.do_get(None);
         }
         &["get", item] => {
-            actor.do_get(Some(item));
+            agent.do_get(Some(item));
         }
         &["drop"] => {
-            actor.do_drop(None);
+            agent.do_drop(None);
         }
         &["drop", item] => {
-            actor.do_drop(Some(item));
+            agent.do_drop(Some(item));
         }
         &["i"] | &["inv"] | &["inventory"] => {
-            actor.do_inventory();
+            agent.do_inventory();
         }
-        &[direction] if actor.do_move(direction) => (),
-        &[social] if actor.do_act(social, None) => (),
-        &[social, target] if actor.do_act(social, Some(target)) => (),
+        &[direction] if agent.do_move(direction) => (),
+        &[social] if agent.do_act(social, None) => (),
+        &[social, target] if agent.do_act(social, Some(target)) => (),
         &[cmd_word, ..] => {
             write!(
                 world_state.players.current(),
@@ -87,7 +151,183 @@ pub(crate) fn process_command(world_state: &mut WorldState, words: &[&str]) {
     }
 }
 
-impl<'w, 's, 'p> Actor<'w, 's, 'p> {
+impl<'e, 'p> EntityAgent<'e, 'p> {
+    fn do_look(&mut self) {
+        let myself = self.entity_world.entity_info(self.entity_id);
+        let room_id = self.entity_world.room_of(self.entity_id);
+        let room = self.entity_world.entity_info(room_id);
+
+        let mut act = self.players.act_alone(&myself);
+        let mut out = act.myself();
+
+        // Title
+        echo!(out, "\x1b[33m{}\x1b[0m\r\n", room.internal_title());
+
+        // Description
+        let description = room.internal_description();
+        echo!(out, "{}", description);
+        if !description.ends_with("\r") && !description.ends_with("\n") {
+            echo!(out, "\r\n");
+        }
+
+        // Exits
+        let mut first_exit = true;
+        for exit in room.exits() {
+            if first_exit {
+                first_exit = false;
+                echo!(out, "\x1b[32mYou see exits: ");
+            } else {
+                echo!(out, ", ");
+            }
+
+            echo!(out, "{}", exit.keyword());
+        }
+
+        if first_exit {
+            echo!(out, "\x1b[32mYou see no exits.\x1b[0m\r\n");
+        } else {
+            echo!(out, ".\x1b[0m\r\n");
+        }
+
+        // Objects
+        for object in room.objects() {
+            echo!(out, "\x1b[36m{}\x1b[0m\r\n", object.lateral_description());
+        }
+
+        // Mobiles
+        for mobile in room.mobiles() {
+            echo!(out, "\x1b[35m{}\x1b[0m\r\n", mobile.lateral_description());
+        }
+
+        // Players
+        for player in room.players() {
+            if player.entity_id() == self.entity_id {
+                continue;
+            }
+
+            echo!(out, "\x1b[1;35m{}\x1b[0m\r\n", player.lateral_description());
+        }
+    }
+
+    pub fn do_look_at(&mut self, target: &str) {
+        let myself = self.entity_world.entity_info(self.entity_id);
+        let target = myself.find_entity(target, |_entity| true);
+
+        let mut output = self.players.current();
+
+        let description = match target {
+            Found::Myself => {
+                "It's you! But you're sadly just a player and players don't have descriptions yet."
+            }
+            Found::Other(entity) => entity.external_description(),
+            Found::WrongSelf => {
+                unreachable!("The matcher accepts everything");
+            }
+            Found::WrongOther(_) => {
+                unreachable!("The matcher accepts everything");
+            }
+            Found::Nothing => "You don't see anything named like that here.",
+        };
+
+        output.echo(description);
+
+        if !description.ends_with("\r") && !description.ends_with("\n") {
+            output.echo("\r\n");
+        }
+    }
+
+    pub fn force(&mut self, target_name: &str, words: &[&str]) {
+        let myself = self.entity_world.entity_info(self.entity_id);
+        let target = myself.find_entity(target_name, |_entity| true);
+
+        let target = match target {
+            Found::Myself => {
+                let mut act = self.players.act_alone(&myself);
+                echo!(act.myself(), "You snap your fingers at yourself.\r\n");
+                echo!(act.others(), "He snaps his fingers at himself.\r\n");
+                myself
+            }
+            Found::Other(other) => {
+                let mut act = self.players.act_with(&myself, &other);
+                echo!(act.myself(), "You snap your fingers at $N.\r\n");
+                echo!(act.target(), "$^$n snaps $s fingers at you.\r\n");
+                echo!(act.others(), "$^$n snaps $s fingers at $N.\r\n");
+                other
+            }
+            Found::WrongSelf => {
+                unreachable!("The matcher accepts everything");
+            }
+            Found::WrongOther(_) => {
+                unreachable!("The matcher accepts everything");
+            }
+            Found::Nothing => {
+                let mut act = self.players.act_alone(&myself);
+                echo!(
+                    act.myself(),
+                    "You don't see anything named {} in the room.\r\n",
+                    target_name
+                );
+                return;
+            }
+        };
+
+        let mut act = self.players.act_alone(&target);
+        echo!(act.myself(), "You feel compelled to: {:?}\r\n", words);
+
+        let target_id = target.entity_id();
+
+        let mut agent = EntityAgent {
+            entity_world: self.entity_world,
+            players: self.players,
+            entity_id: target_id,
+        };
+
+        if !process_agent_command(&mut agent, words) {
+            let myself = self.entity_world.entity_info(self.entity_id);
+            let target = self.entity_world.entity_info(target_id);
+            let mut act = self.players.act_with(&myself, &target);
+            echo!(act.myself(), "$^$E didn't quite understand your command.\r\n");
+        }
+    }
+
+    pub fn do_say(&mut self, message: &str) {
+        let myself = self.entity_world.entity_info(self.entity_id);
+        let mut act = self.players.act_alone(&myself);
+
+        let first_character = message.chars().next();
+
+        if let Some(character) = first_character {
+            let bytes = character.len_utf8();
+            let remaining_characters = &message[bytes..];
+
+            let ends_in_punctuation = message
+                .chars()
+                .last()
+                .map(|c: char| !c.is_alphanumeric())
+                .unwrap_or(true);
+
+            let uppercase_character = character.to_uppercase();
+
+            let suffix = if ends_in_punctuation { "" } else { "." };
+
+            echo!(
+                act.myself(),
+                "\x1b[1;35mYou say, '{}{}{}'\x1b[0m\r\n",
+                uppercase_character, EscapeVariables(remaining_characters), suffix
+            );
+
+            echo!(
+                act.others(),
+                "\x1b[1;35m$^$n says, '{}{}{}'\x1b[0m\r\n",
+                uppercase_character, EscapeVariables(remaining_characters), suffix
+            );
+        } else {
+            echo!(act.myself(), "You say nothing whatsoever.\r\n");
+        }
+    }
+}
+
+impl<'w, 's, 'p> Agent<'w, 's, 'p> {
     pub fn do_look_at(&mut self, target: &str) {
         let description = find_description(self.players, self.rooms, self.world, target);
 
@@ -107,24 +347,24 @@ impl<'w, 's, 'p> Actor<'w, 's, 'p> {
         use std::fmt::Write;
         let mut output = self.players.current();
 
-        write!(output, "\x1b[33m{}\x1b[0m\r\n", room.name).unwrap();
-        write!(output, "{}", room.description).unwrap();
+        echo!(output, "\x1b[33m{}\x1b[0m\r\n", room.name);
+        echo!(output, "{}", room.description);
 
         if room.exits.is_empty() {
-            write!(output, "\x1b[32mYou see no exits.\x1b[0m\r\n").unwrap();
+            echo!(output, "\x1b[32mYou see no exits.\x1b[0m\r\n");
         } else {
-            write!(output, "\x1b[32mYou see exits: ").unwrap();
+            echo!(output, "\x1b[32mYou see exits: ");
             let mut first = true;
 
             for exit in room.exits.iter() {
                 if first {
                     first = false;
                 } else {
-                    write!(output, ", ").unwrap();
+                    echo!(output, ", ");
                 }
-                write!(output, "{}", exit.name).unwrap();
+                echo!(output, "{}", exit.name);
             }
-            write!(output, ".\x1b[0m\r\n").unwrap();
+            echo!(output, ".\x1b[0m\r\n");
         }
 
         for object in &room_state.objects {
@@ -627,14 +867,5 @@ impl<'w, 's, 'p> Actor<'w, 's, 'p> {
             "{} drops {}.\r\n",
             player, object.short_description
         ));
-    }
-}
-
-fn actor(world_state: &mut WorldState) -> Actor<'_, '_, '_> {
-    Actor {
-        world: &world_state.world,
-        socials: &world_state.socials,
-        rooms: &mut world_state.rooms,
-        players: &mut world_state.players,
     }
 }

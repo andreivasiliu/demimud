@@ -16,8 +16,6 @@ pub(super) struct Room {
     #[serde(default)]
     pub(super) exits: Vec<Exit>,
     #[serde(default)]
-    pub(super) room_echoes: Vec<RoomEcho>,
-    #[serde(default)]
     pub(super) extra_descriptions: Vec<ExtraDescription>,
 
     #[serde(skip)]
@@ -31,21 +29,13 @@ pub(super) struct Exit {
     pub(super) description: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Default, Clone)]
-pub(super) struct RoomEcho {
-    pub(super) first_hour: u8,
-    pub(super) last_hour: u8,
-    pub(super) percentage: u16,
-    pub(super) echo_text: String,
-}
-
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub(super) struct ExtraDescription {
     pub(super) keyword: String,
     pub(super) description: String,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 pub(super) enum Gender {
     Male,
     Female,

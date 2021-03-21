@@ -18,6 +18,8 @@ mod socials;
 mod state;
 mod world;
 mod commands;
+mod acting;
+mod entity;
 
 #[derive(Serialize, Deserialize)]
 struct ConnectionState {
@@ -351,6 +353,31 @@ fn send_echoes(
 ) {
     for (target, connection) in &connection_state.connections {
         if let Some(player) = &connection.player {
+            if let Some(player_echo) = players.player_echoes.get(player.as_str()) {
+                let echoes = &player_echo.echo_buffer;
+
+                if !echoes.is_empty() {
+                    let target = Source(*target);
+                    
+                    // Send them a newline first if they didn't press enter
+                    if !connection.sent_command {
+                        net_server.send_bytes(&target, b"\r\n");
+                    }
+
+                    net_server.send_bytes(&target, colorize(echoes).as_bytes());
+
+                    if !connection.sent_command {
+                        // Also send them a prompt
+                        if !connection.no_prompt {
+                            if let Some(player) = &connection.player {
+                                net_server.send_bytes(&target, player.as_bytes());
+                            }
+                            net_server.send_bytes(&target, b"> ");
+                        }
+                    }
+                }
+            }
+            
             if let Some(echoes) = players.echoes.get(player.as_str()) {
                 if echoes.is_empty() && !connection.sent_command {
                     continue;
@@ -385,6 +412,10 @@ fn send_echoes(
 
     for echo in players.echoes.values_mut() {
         echo.clear();
+    }
+
+    for player_echo in players.player_echoes.values_mut() {
+        player_echo.echo_buffer.clear();
     }
 }
 

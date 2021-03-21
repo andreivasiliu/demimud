@@ -1,12 +1,32 @@
-use std::{collections::HashMap, fmt::Write};
+use std::{collections::{BTreeMap, HashMap}, fmt::Write};
 
-use crate::world::Vnum;
+use crate::{acting::{ActingStage, Actor, TargetType}, world::Vnum};
 
 pub(crate) struct Players {
-    pub(crate) locations: HashMap<String, Vnum>,
+    pub(crate) player_echoes: BTreeMap<String, PlayerEcho>,
+
+    // TODO: delete
     pub(crate) echoes: HashMap<String, String>,
+    pub(crate) locations: HashMap<String, Vnum>,
     pub(crate) current_player: String,
     pub(crate) current_target: Option<String>,
+}
+
+#[derive(Default)]
+pub(crate) struct PlayerEcho {
+    pub echo_buffer: String,
+    // TODO: Fix visibility
+    pub current_target_type: Option<TargetType>,
+}
+
+impl Players {
+    pub fn act_alone<'p, 'e>(&'p mut self, current: &'e dyn Actor) -> ActingStage<'p, 'e> {
+        ActingStage::new(self, current, None)
+    }
+
+    pub fn act_with<'p, 'e>(&'p mut self, current: &'e dyn Actor, target: &'e dyn Actor) -> ActingStage<'p, 'e> {
+        ActingStage::new(self, current, Some(target))
+    }
 }
 
 pub(crate) struct CurrentPlayer<'a> {

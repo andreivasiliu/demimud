@@ -2,14 +2,11 @@ use std::collections::BTreeMap;
 
 use inflector::Inflector;
 
-use crate::{
-    players::Players,
-    socials::Socials,
-    world::{Exit, ExtraDescription, Mobile, Object, ResetCommand, Room, Vnum, World, opposite_direction},
-};
+use crate::{entity::EntityWorld, players::Players, socials::Socials, world::{Exit, ExtraDescription, Mobile, Object, ResetCommand, Room, Vnum, World, opposite_direction}};
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub(crate) struct RoomState {
+    pub(crate) entity_id: EntityId,
     pub(crate) vnum: Vnum,
 
     pub(crate) players: BTreeMap<String, PlayerState>,
@@ -17,56 +14,117 @@ pub(crate) struct RoomState {
     pub(crate) mobiles: Vec<MobileState>,
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub(crate) struct PlayerState {
+    pub(crate) entity_id: EntityId,
     pub(crate) character: CharacterState,
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub(crate) struct ObjectState {
+    pub(crate) entity_id: EntityId,
     pub(crate) vnum: Vnum,
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub(crate) struct MobileState {
+    pub(crate) entity_id: EntityId,
     pub(crate) vnum: Vnum,
     pub(crate) character: CharacterState,
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub(crate) struct CharacterState {
+    pub(crate) entity_id: EntityId,
+    pub(crate) info: CharacterInfo,
     pub(crate) inventory: Vec<ObjectState>,
     pub(crate) equipment: Vec<(String, ObjectState)>,
+}
+
+#[derive(Clone)]
+pub(crate) enum CharacterInfo {
+    Mobile(Vnum),
+    Player(PlayerInfo),
+}
+
+impl Default for CharacterInfo {
+    fn default() -> Self {
+        CharacterInfo::Mobile(Default::default())
+    }
+}
+
+#[derive(Default, Clone)]
+pub(crate) struct PlayerInfo {
+    pub(crate) name: String,
+    pub(crate) short_description: String,
 }
 
 pub(super) struct WorldState {
     pub(crate) world: World,
     pub(crate) socials: Socials,
+    pub(crate) entity_world: EntityWorld,
 
     pub(crate) players: Players,
     pub(crate) rooms: Vec<RoomState>,
+
+    id_generator: IdGenerator,
+}
+
+struct IdGenerator {
+    next_id: usize,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum EntityId {
+    Player(usize),
+    Mobile(usize),
+    Object(usize),
+    Room(Vnum),
+}
+
+impl IdGenerator {
+    fn next(&mut self) -> usize {
+        let new_id = self.next_id;
+        self.next_id += 1;
+        new_id
+    }
 }
 
 pub(super) fn create_state(world: World, socials: Socials) -> WorldState {
     let players = Players {
         locations: Default::default(),
         echoes: Default::default(),
+        player_echoes: Default::default(),
         current_player: Default::default(),
         current_target: None,
     };
 
     let mut rooms = Vec::new();
-    rooms.resize(world.rooms.len(), RoomState::default());
+    rooms.resize(world.rooms.len(), RoomState {
+        entity_id: EntityId::Room(Vnum(0)),
+        vnum: Vnum(0),
+        players: Default::default(),
+        objects: Default::default(),
+        mobiles: Default::default(),
+    });
 
     for (index, room) in rooms.iter_mut().enumerate() {
-        room.vnum = world.rooms[index].vnum;
+        let vnum = world.rooms[index].vnum;
+        room.entity_id = EntityId::Room(vnum);
+        room.vnum = vnum;
     }
+
+    let id_generator = IdGenerator { next_id: 0 };
+
+    let entity_world = EntityWorld::from_world(&world);
 
     WorldState {
         world,
+        entity_world,
         socials,
         players,
         rooms,
+        id_generator,
     }
 }
 
@@ -89,9 +147,16 @@ impl WorldState {
                         room_limit: _,
                     } => {
                         let room = &mut self.rooms[r_num.0];
+                        let entity_id = EntityId::Mobile(self.id_generator.next());
                         room.mobiles.push(MobileState {
+                            entity_id,
                             vnum: *m_num,
-                            character: Default::default(),
+                            character: CharacterState {
+                                entity_id,
+                                info: Default::default(),
+                                inventory: Default::default(),
+                                equipment: Default::default(),
+                            },
                         });
                         last_mobile = Some((r_num.0, room.mobiles.len() - 1));
                     }
@@ -101,7 +166,10 @@ impl WorldState {
                         r_num,
                     } => {
                         let room = &mut self.rooms[r_num.0];
-                        room.objects.push(ObjectState { vnum: *o_num });
+                        room.objects.push(ObjectState {
+                            entity_id: EntityId::Object(self.id_generator.next()),
+                            vnum: *o_num
+                        });
                     }
                     ResetCommand::Door { .. } => {}
                     ResetCommand::Give {
@@ -112,7 +180,10 @@ impl WorldState {
                         let room = &mut self.rooms[last_mobile.0];
                         let mob = &mut room.mobiles[last_mobile.1];
 
-                        mob.character.inventory.push(ObjectState { vnum: *o_num })
+                        mob.character.inventory.push(ObjectState {
+                            entity_id: EntityId::Object(self.id_generator.next()),
+                            vnum: *o_num
+                        })
                     }
                     ResetCommand::Equip {
                         o_num,
@@ -125,7 +196,10 @@ impl WorldState {
 
                         mob.character
                             .equipment
-                            .push((location.clone(), ObjectState { vnum: *o_num }));
+                            .push((location.clone(), ObjectState {
+                                entity_id: EntityId::Object(self.id_generator.next()),
+                                vnum: *o_num
+                            }));
                     }
                 }
             }
@@ -206,16 +280,29 @@ impl WorldState {
     }
 
     pub(super) fn add_player(&mut self, name: String) {
+        self.entity_world.add_player(&name);
+
         if !self.players.locations.contains_key(&name) {
+            let entity_id = EntityId::Player(self.id_generator.next());
             self.rooms[23611].players.insert(
                 name.clone(),
                 PlayerState {
-                    character: Default::default(),
+                    entity_id,
+                    character: CharacterState {
+                        info: CharacterInfo::Player(PlayerInfo {
+                            name: name.to_string(),
+                            short_description: name.to_title_case(),
+                        }),
+                        entity_id,
+                        inventory: Default::default(),
+                        equipment: Default::default(),
+                    },
                 },
             );
             self.players.locations.insert(name.clone(), Vnum(23611));
         }
-        self.players.echoes.entry(name).or_insert(String::new());
+        self.players.echoes.entry(name.to_string()).or_insert(String::new());
+        self.players.player_echoes.entry(name).or_default();
     }
 }
 
