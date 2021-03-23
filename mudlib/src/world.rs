@@ -56,6 +56,7 @@ pub(super) struct Mobile {
     pub(super) long_description: String,
     pub(super) description: String,
     pub(super) gender: Gender,
+    pub(super) area: String,
 
     pub(super) sentinel: bool,
     pub(super) unseen: bool,
@@ -67,6 +68,7 @@ pub(super) struct Object {
     pub(super) name: String,
     pub(super) short_description: String,
     pub(super) description: String,
+    pub(super) area: String,
 
     #[serde(default)]
     pub(super) extra_descriptions: Vec<ExtraDescription>,
@@ -175,13 +177,6 @@ pub(super) fn load_world(path: &Path) -> World {
 }
 
 impl World {
-    pub(super) fn room(&self, vnum: Vnum) -> &Room {
-        &self
-            .rooms
-            .get(vnum.0)
-            .unwrap_or_else(|| panic!("Room v{} not found", vnum.0))
-    }
-
     pub(super) fn mobile(&self, vnum: Vnum) -> &Mobile {
         &self
             .mobiles
@@ -194,13 +189,6 @@ impl World {
             .objects
             .get(vnum.0)
             .unwrap_or_else(|| panic!("Object v{} not found", vnum.0))
-    }
-
-    pub(super) fn has_room(&self, vnum: Vnum) -> bool {
-        match self.rooms.get(vnum.0) {
-            Some(room) => room.vnum.0 != 0,
-            None => false,
-        }
     }
 }
 

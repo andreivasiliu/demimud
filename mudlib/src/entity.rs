@@ -1,4 +1,7 @@
-use std::{collections::{BTreeMap, HashMap}, num::NonZeroUsize};
+use std::{
+    collections::{BTreeMap, HashMap},
+    num::NonZeroUsize,
+};
 
 use inflector::Inflector;
 use string_interner::StringInterner;
@@ -11,9 +14,81 @@ pub(crate) struct EntityWorld {
     entities: HashMap<RawEntityId, Entity>,
     player_entities: HashMap<String, RawEntityId>,
     player_locations: BTreeMap<String, RawEntityId>,
-    starting_room: RawEntityId,
+    landmarks: BTreeMap<&'static str, RawEntityId>,
     world_entity_id: RawEntityId,
     era: u16,
+}
+
+#[repr(transparent)]
+struct IntStr {
+    symbol: string_interner::symbol::SymbolU32,
+}
+
+struct Entity {
+    data: EntityData,
+    raw_entity_id: RawEntityId,
+    contents: Vec<RawEntityId>,
+    contained_by: Option<RawEntityId>,
+    leads_to: Option<RawEntityId>,
+    leads_from: Vec<RawEntityId>,
+
+    player: Option<String>,
+}
+
+struct EntityData {
+    act_info: ActInfo,
+    internal_title: IntStr,
+    external_description: IntStr,
+    internal_description: IntStr,
+    lateral_description: IntStr,
+    area: IntStr,
+    sector: Option<IntStr>,
+    wander: bool,
+
+    entity_type: EntityType,
+    equipped: Option<IntStr>,
+}
+
+#[derive(Hash, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct EntityId {
+    id: RawEntityId,
+    era: u16,
+    entity_type: EntityType,
+}
+
+#[derive(Hash, Clone, Copy, PartialEq, Eq)]
+struct RawEntityId {
+    id: NonZeroUsize,
+}
+
+pub(crate) struct ActInfo {
+    keyword: IntStr,
+    short_description: IntStr,
+    gender: Gender,
+}
+
+#[derive(Hash, Clone, Copy, PartialEq, Eq)]
+enum EntityType {
+    Player,
+    Mobile,
+    Object,
+    Room,
+    Exit,
+    ExtraDescription,
+}
+
+pub(crate) struct EntityInfo<'e> {
+    entity: &'e Entity,
+    interner: &'e StringInterner,
+    entity_world: &'e EntityWorld,
+}
+
+pub(crate) enum Found<'a> {
+    Myself,
+    Other(EntityInfo<'a>),
+    WrongSelf,
+    WrongOther(EntityInfo<'a>),
+    Nothing,
 }
 
 struct IdGenerator {
@@ -60,12 +135,18 @@ impl EntityWorld {
                     "You are inside the world, and the entire world surrounds you.",
                 ),
                 lateral_description: intern("The entire world sits calmly next to you."),
+                area: intern("world"),
+                sector: None,
+                wander: false,
                 entity_type: EntityType::Room,
                 equipped: None,
             },
             raw_entity_id: id_generator.next(),
             contents: Vec::new(),
             contained_by: None,
+            leads_to: None,
+            leads_from: Vec::new(),
+            player: None,
         };
 
         let world_entity_id = world_entity.raw_entity_id;
@@ -79,14 +160,42 @@ impl EntityWorld {
             entities,
             player_entities: HashMap::new(),
             player_locations: BTreeMap::new(),
-            starting_room: world_entity_id,
+            landmarks: BTreeMap::new(),
             world_entity_id,
             era: 1,
         }
     }
 
-    pub fn add_player(&mut self, name: &str) {
-        let keyword = self.intern(name);
+    pub fn move_entity(&mut self, entity_id: EntityId, to_room_id: EntityId) {
+        let raw_entity_id = self.raw_entity_id(entity_id);
+
+        // Move out of old room
+        let original_room = self.entity_raw(raw_entity_id).contained_by;
+        if let Some(room) = original_room {
+            let room = self.entity_mut_raw(room);
+            room.contents
+                .retain(|contained_entity_id| contained_entity_id != &raw_entity_id)
+        }
+
+        // Move into new room
+        self.entity_mut(to_room_id).contents.push(raw_entity_id);
+        self.entity_mut(entity_id).contained_by = Some(self.raw_entity_id(to_room_id));
+
+        // Update world references
+        if let Some(player) = &self
+            .entities
+            .get(&entity_id.id)
+            .expect("Checked above")
+            .player
+        {
+            if let Some(location) = self.player_locations.get_mut(player) {
+                *location = to_room_id.id;
+            }
+        }
+    }
+
+    pub fn add_player(&mut self, name: &str) -> EntityId {
+        let keyword = self.intern(&name.to_lowercase());
         let short_description = self.intern(&name.to_title_case());
         let title = name.to_title_case();
         let internal_title = self.intern(&format!("Inside {}.", title));
@@ -99,9 +208,10 @@ impl EntityWorld {
             title
         ));
         let lateral_description = self.intern(&format!("{}, a player, is here.", title));
+        let area = self.intern("world");
 
         let room_entity_id = EntityId {
-            id: self.starting_room,
+            id: self.world_entity_id,
             era: self.era,
             entity_type: EntityType::Room,
         };
@@ -118,34 +228,48 @@ impl EntityWorld {
                 external_description,
                 internal_description,
                 lateral_description,
+                area,
+                sector: None,
+                wander: false,
                 entity_type: EntityType::Player,
                 equipped: None,
             },
         );
 
+        self.entity_mut(player_entity_id).player = Some(name.to_string());
+
         self.player_entities
             .insert(name.to_string(), player_entity_id.id);
         self.player_locations
             .insert(name.to_string(), room_entity_id.id);
+
+        player_entity_id
     }
 
-    fn check_entity_era(&self, entity_id: EntityId) {
+    fn raw_entity_id(&self, entity_id: EntityId) -> RawEntityId {
         if entity_id.era != self.era {
             panic!("Entity IDs should not be stored long-term!");
         }
+        entity_id.id
     }
 
     fn entity(&self, entity_id: EntityId) -> &Entity {
-        self.check_entity_era(entity_id);
+        self.entity_raw(self.raw_entity_id(entity_id))
+    }
+
+    fn entity_raw(&self, raw_entity_id: RawEntityId) -> &Entity {
         self.entities
-            .get(&entity_id.id)
+            .get(&raw_entity_id)
             .expect("Entities should not be deleted within an era")
     }
 
     fn entity_mut(&mut self, entity_id: EntityId) -> &mut Entity {
-        self.check_entity_era(entity_id);
+        self.entity_mut_raw(self.raw_entity_id(entity_id))
+    }
+
+    fn entity_mut_raw(&mut self, raw_entity_id: RawEntityId) -> &mut Entity {
         self.entities
-            .get_mut(&entity_id.id)
+            .get_mut(&raw_entity_id)
             .expect("Entities should not be deleted within an era")
     }
 
@@ -156,7 +280,6 @@ impl EntityWorld {
             .expect("Internally constructed IDs should be correct");
 
         EntityInfo {
-            data: &entity.data,
             entity: &entity,
             interner: &self.interner,
             entity_world: &self,
@@ -167,11 +290,26 @@ impl EntityWorld {
         let entity = self.entity(entity_id);
 
         EntityInfo {
-            data: &entity.data,
             entity: &entity,
             interner: &self.interner,
             entity_world: &self,
         }
+    }
+
+    pub fn all_entities(&self) -> impl Iterator<Item = EntityInfo<'_>> {
+        self.entities.values().map(move |entity| EntityInfo {
+            entity,
+            interner: &self.interner,
+            entity_world: self,
+        })
+    }
+
+    pub fn landmark(&self, landmark: &str) -> Option<EntityId> {
+        self.landmarks.get(landmark).map(|room_id| EntityId {
+            id: *room_id,
+            era: self.era,
+            entity_type: EntityType::Room,
+        })
     }
 
     pub fn room_of(&self, entity_id: EntityId) -> EntityId {
@@ -218,7 +356,7 @@ impl EntityWorld {
     }
 
     fn insert_entity(&mut self, container: EntityId, data: EntityData) -> EntityId {
-        self.check_entity_era(container);
+        let container = self.raw_entity_id(container);
 
         let entity_type = data.entity_type;
         let raw_entity_id = self.id_generator.next();
@@ -227,12 +365,15 @@ impl EntityWorld {
             data,
             raw_entity_id,
             contents: Vec::new(),
-            contained_by: Some(container.id),
+            contained_by: Some(container),
+            leads_to: None,
+            leads_from: Vec::new(),
+            player: None,
         };
 
         self.entities.insert(raw_entity_id, new_entity);
 
-        let container_entity = self.entity_mut(container);
+        let container_entity = self.entity_mut_raw(container);
         container_entity.contents.push(raw_entity_id);
 
         EntityId {
@@ -242,62 +383,53 @@ impl EntityWorld {
         }
     }
 
+    pub(crate) fn set_leads_to(&mut self, exit_id: EntityId, to_room_id: EntityId) {
+        let exit_id = self.raw_entity_id(exit_id);
+        let to_room_id = self.raw_entity_id(to_room_id);
+
+        let exit = self.entity_raw(exit_id);
+
+        if exit.leads_to.is_some() {
+            // FIXME
+            unimplemented!("Changing existing exit points is not yet implemented.");
+        }
+
+        self.entity_mut_raw(exit_id).leads_to = Some(to_room_id);
+        self.entity_mut_raw(to_room_id).leads_from.push(exit_id);
+    }
+
     pub(crate) fn from_world(world: &World) -> EntityWorld {
         let mut entity_world = EntityWorld::new();
         let mut room_vnum_to_id = HashMap::new();
+        let mut exit_leads_to = HashMap::new();
 
         for room in &world.rooms {
-            let mut intern = |string: &str| IntStr {
-                symbol: entity_world.interner.get_or_intern(string),
-            };
-
             let mut room_contents =
                 Vec::with_capacity(room.exits.len() + room.extra_descriptions.len());
-
-            for exit in &room.exits {
-                room_contents.push(EntityData {
-                    act_info: ActInfo {
-                        keyword: intern(&exit.name),
-                        // TODO: Cow
-                        short_description: intern(&format!("the {} exit", exit.name)),
-                        gender: Gender::Neutral,
-                    },
-                    internal_title: intern(&format!("Inside an {} exit.", exit.name)),
-                    external_description: intern(
-                        exit.description
-                            .as_deref()
-                            .unwrap_or("You don't see anything special in that direction."),
-                    ),
-                    internal_description: intern(&format!(
-                        "You are inside an {} exit. That normally shouldn't be possible.",
-                        exit.name
-                    )),
-                    lateral_description: intern(&format!("An exit leading {} is here.", exit.name)),
-                    entity_type: EntityType::Exit,
-                    equipped: None,
-                })
-            }
 
             for extra_description in &room.extra_descriptions {
                 room_contents.push(EntityData {
                     act_info: ActInfo {
-                        keyword: intern(&extra_description.keyword),
+                        keyword: entity_world.intern(&extra_description.keyword),
                         // TODO: SmallVec
-                        short_description: intern(&format!(
+                        short_description: entity_world.intern(&format!(
                             "extra description called '{}'",
                             extra_description.keyword
                         )),
                         gender: Gender::Neutral,
                     },
-                    internal_title: intern(&format!("Inside an extra description.")),
-                    external_description: intern(&extra_description.description),
-                    internal_description: intern(&format!(
+                    internal_title: entity_world.intern(&format!("Inside an extra description.")),
+                    external_description: entity_world.intern(&extra_description.description),
+                    internal_description: entity_world.intern(&format!(
                         "You are inside an extra description. That normally shouldn't be possible."
                     )),
-                    lateral_description: intern(&format!(
+                    lateral_description: entity_world.intern(&format!(
                         "An extra description called '{}' is here.",
                         extra_description.keyword
                     )),
+                    area: entity_world.intern(&room.area),
+                    sector: None,
+                    wander: false,
                     entity_type: EntityType::ExtraDescription,
                     equipped: None,
                 })
@@ -305,19 +437,54 @@ impl EntityWorld {
 
             let room_data = EntityData {
                 act_info: ActInfo {
-                    keyword: intern(&room.name),
-                    short_description: intern(&room.name),
+                    keyword: entity_world.intern(&room.name),
+                    short_description: entity_world.intern(&room.name),
                     gender: Gender::Neutral,
                 },
-                internal_title: intern(&room.name),
-                external_description: intern(&format!("It's a room called '{}'.", room.name)),
-                internal_description: intern(&room.description),
-                lateral_description: intern(&format!("A room called '{}' is here.", room.name)),
+                internal_title: entity_world.intern(&room.name),
+                external_description: entity_world
+                    .intern(&format!("It's a room called '{}'.", room.name)),
+                internal_description: entity_world.intern(&room.description),
+                lateral_description: entity_world
+                    .intern(&format!("A room called '{}' is here.", room.name)),
+                area: entity_world.intern(&room.area),
+                sector: Some(entity_world.intern(&room.sector)),
+                wander: false,
                 entity_type: EntityType::Room,
                 equipped: None,
             };
 
             let room_id = entity_world.insert_entity(entity_world.world_entity_id(), room_data);
+
+            for exit in &room.exits {
+                let exit_data = EntityData {
+                    act_info: ActInfo {
+                        keyword: entity_world.intern(&exit.name),
+                        short_description: entity_world.intern(&format!("the {} exit", exit.name)),
+                        gender: Gender::Neutral,
+                    },
+                    internal_title: entity_world.intern(&format!("Inside an {} exit.", exit.name)),
+                    external_description: entity_world.intern(
+                        exit.description
+                            .as_deref()
+                            .unwrap_or("You don't see anything special in that direction."),
+                    ),
+                    internal_description: entity_world.intern(&format!(
+                        "You are inside an {} exit. That normally shouldn't be possible.",
+                        exit.name
+                    )),
+                    lateral_description: entity_world
+                        .intern(&format!("An exit leading {} is here.", exit.name)),
+                    area: entity_world.intern(&room.area),
+                    sector: None,
+                    wander: false,
+                    entity_type: EntityType::Exit,
+                    equipped: None,
+                };
+                let exit_id = entity_world.insert_entity(room_id, exit_data);
+
+                exit_leads_to.insert(exit_id, exit.vnum.0);
+            }
 
             for entity_data in room_contents {
                 entity_world.insert_entity(room_id, entity_data);
@@ -326,10 +493,23 @@ impl EntityWorld {
             room_vnum_to_id.insert(room.vnum.0, room_id);
         }
 
-        entity_world.starting_room = room_vnum_to_id
-            .get(&23611)
-            .expect("Starting room not found.")
-            .id;
+        for (exit_id, leads_to) in exit_leads_to {
+            if let Some(to_room_id) = room_vnum_to_id.get(&leads_to) {
+                entity_world.set_leads_to(exit_id, *to_room_id);
+            }
+        }
+
+        let landmarks = &[("gnomehill", 23611), ("mekali", 3000), ("dzagari", 27003)];
+
+        for (landmark, vnum) in landmarks {
+            entity_world.landmarks.insert(
+                landmark,
+                room_vnum_to_id
+                    .get(&vnum)
+                    .expect("GnomeHill landmark room not found.")
+                    .id,
+            );
+        }
 
         for (_area_data, area_resets) in &world.areas {
             let mut last_mobile_id = None;
@@ -361,6 +541,7 @@ impl EntityWorld {
                             mobile.short_description, objective_pronoun
                         ));
                         let lateral_description = entity_world.intern(&mobile.long_description);
+                        let area = entity_world.intern(&mobile.area);
 
                         let mobile_entity_id = entity_world.insert_entity(
                             room_entity_id,
@@ -374,6 +555,9 @@ impl EntityWorld {
                                 external_description,
                                 internal_description,
                                 lateral_description,
+                                area,
+                                sector: None,
+                                wander: !mobile.sentinel,
                                 entity_type: EntityType::Mobile,
                                 equipped: None,
                             },
@@ -430,21 +614,27 @@ fn load_object(object: &Object, container: EntityId, entity_world: &mut EntityWo
         object.short_description
     ));
     let lateral_description = entity_world.intern(&object.description); // Not ideal.
+    let area = entity_world.intern(&object.area);
 
-
-    let object_id = entity_world.insert_entity(container, EntityData {
-        act_info: ActInfo {
-            keyword,
-            short_description,
-            gender: Gender::Neutral,
+    let object_id = entity_world.insert_entity(
+        container,
+        EntityData {
+            act_info: ActInfo {
+                keyword,
+                short_description,
+                gender: Gender::Neutral,
+            },
+            internal_title,
+            external_description,
+            internal_description,
+            lateral_description,
+            area,
+            sector: None,
+            wander: false,
+            entity_type: EntityType::Object,
+            equipped: None,
         },
-        internal_title,
-        external_description,
-        internal_description,
-        lateral_description,
-        entity_type: EntityType::Object,
-        equipped: None,
-    });
+    );
 
     for extra_description in &object.extra_descriptions {
         let keyword = entity_world.intern(&extra_description.keyword);
@@ -462,89 +652,30 @@ fn load_object(object: &Object, container: EntityId, entity_world: &mut EntityWo
             "An extra description called '{}' is here.",
             extra_description.keyword
         ));
+        let area = entity_world.intern(&object.area);
 
-        entity_world.insert_entity(object_id, EntityData {
-            act_info: ActInfo {
-                keyword,
-                short_description,
-                gender: Gender::Neutral,
+        entity_world.insert_entity(
+            object_id,
+            EntityData {
+                act_info: ActInfo {
+                    keyword,
+                    short_description,
+                    gender: Gender::Neutral,
+                },
+                internal_title,
+                external_description,
+                internal_description,
+                lateral_description,
+                area,
+                sector: None,
+                wander: false,
+                entity_type: EntityType::ExtraDescription,
+                equipped: None,
             },
-            internal_title,
-            external_description,
-            internal_description,
-            lateral_description,
-            entity_type: EntityType::ExtraDescription,
-            equipped: None,
-        });
+        );
     }
 
     object_id
-}
-
-#[repr(transparent)]
-struct IntStr {
-    symbol: string_interner::symbol::SymbolU32,
-}
-
-struct Entity {
-    data: EntityData,
-    raw_entity_id: RawEntityId,
-    contents: Vec<RawEntityId>,
-    contained_by: Option<RawEntityId>,
-}
-
-pub(crate) struct EntityData {
-    act_info: ActInfo,
-    internal_title: IntStr,
-    external_description: IntStr,
-    internal_description: IntStr,
-    lateral_description: IntStr,
-
-    entity_type: EntityType,
-    equipped: Option<IntStr>,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) struct EntityId {
-    id: RawEntityId,
-    era: u16,
-    entity_type: EntityType,
-}
-
-#[derive(Hash, Clone, Copy, PartialEq, Eq)]
-struct RawEntityId {
-    id: NonZeroUsize,
-}
-
-pub(crate) struct ActInfo {
-    keyword: IntStr,
-    short_description: IntStr,
-    gender: Gender,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum EntityType {
-    Player,
-    Mobile,
-    Object,
-    Room,
-    Exit,
-    ExtraDescription,
-}
-
-pub(crate) struct EntityInfo<'e> {
-    pub data: &'e EntityData,
-    entity: &'e Entity,
-    interner: &'e StringInterner,
-    entity_world: &'e EntityWorld,
-}
-
-pub(crate) enum Found<'a> {
-    Myself,
-    Other(EntityInfo<'a>),
-    WrongSelf,
-    WrongOther(EntityInfo<'a>),
-    Nothing,
 }
 
 impl<'e> EntityInfo<'e> {
@@ -552,7 +683,7 @@ impl<'e> EntityInfo<'e> {
         EntityId {
             id: self.entity.raw_entity_id,
             era: self.entity_world.era,
-            entity_type: self.data.entity_type,
+            entity_type: self.entity.data.entity_type,
         }
     }
 
@@ -563,31 +694,78 @@ impl<'e> EntityInfo<'e> {
     }
 
     pub fn short_description(&self) -> &'e str {
-        self.resolve(&self.data.act_info.short_description)
+        self.resolve(&self.entity.data.act_info.short_description)
     }
 
     pub fn internal_title(&self) -> &'e str {
-        self.resolve(&self.data.internal_title)
+        self.resolve(&self.entity.data.internal_title)
     }
 
     pub fn external_description(&self) -> &'e str {
-        self.resolve(&self.data.external_description)
+        self.resolve(&self.entity.data.external_description)
     }
 
     pub fn internal_description(&self) -> &'e str {
-        self.resolve(&self.data.internal_description)
+        self.resolve(&self.entity.data.internal_description)
     }
 
     pub fn lateral_description(&self) -> &'e str {
-        self.resolve(&self.data.lateral_description)
+        self.resolve(&self.entity.data.lateral_description)
     }
 
     pub fn gender(&self) -> Gender {
-        self.data.act_info.gender
+        self.entity.data.act_info.gender
     }
 
     pub fn keyword(&self) -> &'e str {
-        self.resolve(&self.data.act_info.keyword)
+        self.resolve(&self.entity.data.act_info.keyword)
+    }
+
+    pub fn area(&self) -> &'e str {
+        self.resolve(&self.entity.data.area)
+    }
+
+    pub fn sector(&self) -> Option<&'e str> {
+        self.entity
+            .data
+            .sector
+            .as_ref()
+            .map(|sector| self.resolve(sector))
+    }
+
+    pub fn wander(&self) -> bool {
+        self.entity.data.wander
+    }
+
+    pub fn equipped(&self) -> Option<&str> {
+        self.entity
+            .data
+            .equipped
+            .as_ref()
+            .map(|location| self.resolve(location))
+    }
+
+    pub fn leads_to(&self) -> Option<EntityId> {
+        self.entity.leads_to.map(|leads_to| {
+            let to_room = self.entity_world.entity_raw(leads_to);
+            EntityId {
+                id: to_room.raw_entity_id,
+                era: self.entity_world.era,
+                entity_type: to_room.data.entity_type,
+            }
+        })
+    }
+
+    pub fn is_exit(&self) -> bool {
+        matches!(self.entity.data.entity_type, EntityType::Exit)
+    }
+
+    pub fn is_extra_description(&self) -> bool {
+        matches!(self.entity.data.entity_type, EntityType::ExtraDescription)
+    }
+
+    pub fn is_object(&self) -> bool {
+        matches!(self.entity.data.entity_type, EntityType::Object)
     }
 
     pub fn is_player(&self, player_name: &str) -> bool {
@@ -610,7 +788,6 @@ impl<'e> EntityInfo<'e> {
             let entity = &entity_world.entities[entity_id];
             if entity.data.entity_type == entity_type {
                 Some(EntityInfo {
-                    data: &entity.data,
                     entity,
                     interner,
                     entity_world,
@@ -622,6 +799,15 @@ impl<'e> EntityInfo<'e> {
     }
 
     pub fn contained_entities(&self) -> impl Iterator<Item = EntityInfo<'e>> {
+        let entity_world = self.entity_world;
+
+        self.entity
+            .contents
+            .iter()
+            .map(move |entity_id| entity_world.entity_info_raw(*entity_id))
+    }
+
+    pub fn contained_entities_with_descriptions(&self) -> impl Iterator<Item = EntityInfo<'e>> {
         let entity_world = self.entity_world;
 
         self.entity.contents.iter().flat_map(move |entity_id| {
@@ -660,11 +846,23 @@ impl<'e> EntityInfo<'e> {
 
         let mut bad_result = None;
 
-        for entity in room.contained_entities() {
+        if ["me", "self", "myself"].contains(&keyword) {
+            if matcher(self) {
+                return Found::Myself;
+            } else {
+                bad_result = Some(self.entity_world.entity_info_raw(self.entity_id().id));
+            }
+        }
+
+        let inventory_and_room = self
+            .contained_entities_with_descriptions()
+            .chain(room.contained_entities_with_descriptions());
+
+        for entity in inventory_and_room {
             if entity
                 .keyword()
                 .split_whitespace()
-                .any(|word| word == keyword)
+                .any(|word| word.eq_ignore_ascii_case(keyword))
             {
                 if matcher(&entity) {
                     return if entity.entity_id() == self.entity_id() {

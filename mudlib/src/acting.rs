@@ -196,6 +196,7 @@ impl Display for ReplaceActVariables<'_, '_> {
                 },
                 Some(0) => (),
                 Some(index) => {
+                    capitalized = false;
                     message[..index].fmt(f)?;
                     message = &message[index..];
                 }

@@ -87,7 +87,13 @@ pub(crate) fn load_socials(path: &Path) -> Socials {
             key => parser.panic_on_line(&format!("Unrecognized key '{}' in socials file", key)),
         };
 
-        *attribute = parser.read_until_tilde().trim_start().to_string();
+        let message = parser.read_until_tilde().trim_start();
+
+        if message.starts_with("$") {
+            *attribute = String::from("$^") + message;
+        } else {
+            *attribute = message.to_string();
+        }
     }
 
     Socials { socials }

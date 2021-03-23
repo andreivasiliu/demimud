@@ -1,15 +1,18 @@
 use std::{collections::BTreeMap, net::SocketAddr, panic::catch_unwind, path::Path};
 
+use commands::process_player_command;
 use libtelnet_rs::{events::TelnetEvents, Parser};
-use serde::{Deserialize, Serialize};
 use netcore::{EntryCode, ExitCode, NetServer, Source};
+use serde::{Deserialize, Serialize};
 
-use state::WorldState;
 use colors::colorize;
 use players::Players;
-use commands::process_command;
+use state::WorldState;
 
+mod acting;
 mod colors;
+mod commands;
+mod entity;
 mod file_parser;
 mod load;
 mod mapper;
@@ -17,9 +20,6 @@ mod players;
 mod socials;
 mod state;
 mod world;
-mod commands;
-mod acting;
-mod entity;
 
 #[derive(Serialize, Deserialize)]
 struct ConnectionState {
@@ -44,17 +44,21 @@ impl Game {
         let world = world::load_world(Path::new("mudlib/area"));
         let socials = socials::load_socials(Path::new("mudlib/socials.txt"));
         let mut world_state = state::create_state(world, socials);
-        world_state.reset_world();
 
         for connection in connection_state.connections.values() {
             if let Some(player) = &connection.player {
-                world_state.add_player(player.clone());
+                world_state.add_player(player);
             }
         }
 
-        let mut game = Game { world_state: Box::new(world_state) };
+        let mut game = Game {
+            world_state: Box::new(world_state),
+        };
 
-        let message = format!("`D[`Rsystem`D]: `WOld game {}; new game created.`^\r\n", reason);
+        let message = format!(
+            "`D[`Rsystem`D]: `WOld game {}; new game created.`^\r\n",
+            reason
+        );
         broadcast(&mut game, connection_state, &message);
 
         game
@@ -90,7 +94,11 @@ pub extern "C" fn do_things(net_server: &mut NetServer, entry_code: EntryCode) -
 
     let mut game = Game::new(&mut connection_state, "restarted");
 
-    send_echoes(net_server, &mut game.world_state.players, &mut connection_state);
+    send_echoes(
+        net_server,
+        &mut game.world_state.players,
+        &mut connection_state,
+    );
 
     let mut pulse_mobiles = 0;
 
@@ -156,12 +164,6 @@ pub extern "C" fn do_things(net_server: &mut NetServer, entry_code: EntryCode) -
                             let original_buffer = connection.command_buffer.len();
                             connection.command_buffer.push_str(&*data);
 
-                            world_state.players.current_player.clear();
-                            world_state
-                                .players
-                                .current_player
-                                .push_str(connection.player.as_deref().unwrap_or("nobody"));
-
                             if let Some(index) = data.find('\n') {
                                 // Unlike other players, this one doesn't get
                                 // a newline.
@@ -214,7 +216,23 @@ pub extern "C" fn do_things(net_server: &mut NetServer, entry_code: EntryCode) -
                                         schedule_exit = true;
                                     }
                                     words => {
-                                        game = try_process_command(game, &mut connection_state, words);
+                                        let player = connection
+                                            .player
+                                            .as_ref()
+                                            .expect("Checked in previous match arm");
+
+                                        let old_game = catch_unwind(move || {
+                                            process_player_command(&mut game.world_state, player, words);
+                                            game
+                                        });
+
+                                        game = match old_game {
+                                            Ok(game) => game,
+                                            Err(_err) => {
+                                                // Old game's kaput, make a new one
+                                                Game::new(&mut connection_state, "crashed")
+                                            }
+                                        };
                                     }
                                 }
                             }
@@ -229,13 +247,27 @@ pub extern "C" fn do_things(net_server: &mut NetServer, entry_code: EntryCode) -
                 if pulse_mobiles >= 4 {
                     pulse_mobiles = 0;
 
-                    game = try_update_world(game, &mut connection_state);
+                    let old_game = catch_unwind(move || {
+                        game.world_state.update_world();
+                        game
+                    });
+                    game = match old_game {
+                        Ok(game) => game,
+                        Err(_err) => {
+                            // Old game's kaput, make a new one
+                            Game::new(&mut connection_state, "crashed")
+                        }
+                    };
                 }
             }
         };
 
         // Send all buffered output to players.
-        send_echoes(net_server, &mut game.world_state.players, &mut connection_state);
+        send_echoes(
+            net_server,
+            &mut game.world_state.players,
+            &mut connection_state,
+        );
 
         if schedule_restart {
             for &target in connection_state.connections.keys() {
@@ -273,36 +305,6 @@ pub extern "C" fn do_things(net_server: &mut NetServer, entry_code: EntryCode) -
     }
 }
 
-fn try_process_command(mut game: Game, connection_state: &mut ConnectionState, words: &[&str]) -> Game {
-    let game = catch_unwind(move || {
-        process_command(&mut game.world_state, words);
-        game
-    });
-
-    match game {
-        Ok(game) => game,
-        Err(_err) => {
-            // Old game's kaput, make a new one
-            Game::new(connection_state, "crashed")
-        }
-    }
-}
-
-fn try_update_world(mut game: Game, connection_state: &mut ConnectionState) -> Game {
-    let game = catch_unwind(move || {
-        game.world_state.update_world();
-        game
-    });
-
-    match game {
-        Ok(game) => game,
-        Err(_err) => {
-            // Old game's kaput, make a new one
-            Game::new(connection_state, "crashed")
-        }
-    }
-}
-
 fn process_login_command<F: FnMut(&str)>(
     mut echo: F,
     connection: &mut Connection,
@@ -317,18 +319,15 @@ fn process_login_command<F: FnMut(&str)>(
                 connection.address.as_ref().unwrap()
             );
             connection.player = Some(name.to_string());
-            world_state.players.current_player.clear();
-            world_state.players.current_player.push_str(name);
-            world_state.add_player(name.to_string());
-            world_state.players.current().echo("Name set. Welcome!\r\n");
-            use inflector::Inflector;
-            use std::fmt::Write;
-            write!(
-                world_state.players.others(),
-                "{} materializes from thin air.\r\n",
-                name.to_title_case()
-            )
-            .unwrap();
+            echo("Name set. Welcome!\r\n");
+            world_state.add_player(name);
+            // FIXME
+            // write!(
+            //     world_state.players.others(),
+            //     "{} materializes from thin air.\r\n",
+            //     name.to_title_case()
+            // )
+            // .unwrap();
         }
         &["name", ..] => {
             echo(&colorize(
@@ -353,32 +352,8 @@ fn send_echoes(
 ) {
     for (target, connection) in &connection_state.connections {
         if let Some(player) = &connection.player {
-            if let Some(player_echo) = players.player_echoes.get(player.as_str()) {
-                let echoes = &player_echo.echo_buffer;
-
-                if !echoes.is_empty() {
-                    let target = Source(*target);
-                    
-                    // Send them a newline first if they didn't press enter
-                    if !connection.sent_command {
-                        net_server.send_bytes(&target, b"\r\n");
-                    }
-
-                    net_server.send_bytes(&target, colorize(echoes).as_bytes());
-
-                    if !connection.sent_command {
-                        // Also send them a prompt
-                        if !connection.no_prompt {
-                            if let Some(player) = &connection.player {
-                                net_server.send_bytes(&target, player.as_bytes());
-                            }
-                            net_server.send_bytes(&target, b"> ");
-                        }
-                    }
-                }
-            }
-            
-            if let Some(echoes) = players.echoes.get(player.as_str()) {
+            if let Some(player_echo) = players.player_echoes.get_mut(player.as_str()) {
+                let echoes = &mut player_echo.echo_buffer;
                 if echoes.is_empty() && !connection.sent_command {
                     continue;
                 }
@@ -397,12 +372,12 @@ fn send_echoes(
                     if let Some(player) = &connection.player {
                         net_server.send_bytes(&target, player.as_bytes());
                     }
-                    net_server.send_bytes(&target, b"> ");
+                    net_server.send_bytes(&target, b"> \xFF\xF9");
                 }
             }
         } else if connection.sent_command && !connection.no_prompt {
             let target = Source(*target);
-            net_server.send_bytes(&target, b"> ");
+            net_server.send_bytes(&target, b"> \xFF\xF9");
         }
     }
 
@@ -410,20 +385,21 @@ fn send_echoes(
         connection.sent_command = false;
     }
 
-    for echo in players.echoes.values_mut() {
-        echo.clear();
-    }
-
     for player_echo in players.player_echoes.values_mut() {
         player_echo.echo_buffer.clear();
     }
 }
 
-
 fn broadcast(game: &mut Game, connection_state: &mut ConnectionState, message: &str) {
     for connection in connection_state.connections.values() {
         if let Some(player) = &connection.player {
-            let echo = game.world_state.players.echoes.get_mut(player).unwrap();
+            let echo = &mut game
+                .world_state
+                .players
+                .player_echoes
+                .get_mut(player)
+                .expect("All players should have an echo buffer")
+                .echo_buffer;
             echo.push_str(&colorize(message));
         }
     }

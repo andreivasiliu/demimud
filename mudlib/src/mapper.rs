@@ -1,6 +1,6 @@
 use std::ops::{Index, IndexMut};
 
-use crate::world::{Vnum, World};
+use crate::entity::{EntityId, EntityWorld};
 
 #[derive(Clone, Copy)]
 enum MapElement {
@@ -22,7 +22,7 @@ const EXITS: &[(u8, i8, i8, &'static str)] = &[
 ];
 
 struct RoomMap {
-    rooms: Vec<Vnum>,
+    rooms: Vec<Option<EntityId>>,
     rows: usize,
     columns: usize,
 }
@@ -30,7 +30,7 @@ struct RoomMap {
 impl RoomMap {
     fn new(rows: usize, columns: usize) -> Self {
         let mut rooms = Vec::new();
-        rooms.resize(rows * columns, Vnum(0));
+        rooms.resize(rows * columns, None);
 
         RoomMap {
             rooms,
@@ -39,16 +39,22 @@ impl RoomMap {
         }
     }
 
-    fn place_neighbors(&mut self, row: usize, column: usize, world: &World) {
-        let vnum = self[(row, column)];
-        let room = world.room(vnum);
+    fn place_neighbors(&mut self, row: usize, column: usize, entity_world: &EntityWorld) {
+        let room_id = match self[(row, column)] {
+            Some(room_id) => room_id,
+            None => return,
+        };
+
+        let room = entity_world.entity_info(room_id);
 
         for (_, row_offset, column_offset, dir_name) in EXITS {
-            if let Some(exit) = room.exits.iter().find(|e| e.name == *dir_name) {
-                if !world.has_room(exit.vnum) {
-                    continue;
-                }
-                if world.room(exit.vnum).area != room.area {
+            if let Some(exit) = room.exits().find(|e| e.keyword() == *dir_name) {
+                let other_room = match exit.leads_to() {
+                    Some(other_room) => entity_world.entity_info(other_room),
+                    None => continue,
+                };
+
+                if room.area() != other_room.area() {
                     continue;
                 }
 
@@ -64,9 +70,9 @@ impl RoomMap {
                 let row = (row as isize + *row_offset as isize) as usize;
                 let column = (column as isize + *column_offset as isize) as usize;
 
-                if self[(row, column)] == Vnum(0) {
-                    self[(row, column)] = exit.vnum;
-                    self.place_neighbors(row, column, world);
+                if self[(row, column)].is_none() {
+                    self[(row, column)] = exit.leads_to();
+                    self.place_neighbors(row, column, entity_world);
                 }
             }
         }
@@ -74,7 +80,7 @@ impl RoomMap {
 }
 
 impl Index<(usize, usize)> for RoomMap {
-    type Output = Vnum;
+    type Output = Option<EntityId>;
 
     fn index(&self, (row, column): (usize, usize)) -> &Self::Output {
         &self.rooms[row * self.columns + column]
@@ -87,7 +93,7 @@ impl IndexMut<(usize, usize)> for RoomMap {
     }
 }
 
-pub(crate) fn make_map(world: &World, vnum: Vnum) -> String {
+pub(crate) fn make_map(entity_world: &EntityWorld, location: EntityId) -> String {
     let room_rows = 9;
     let room_columns = 13;
 
@@ -96,8 +102,8 @@ pub(crate) fn make_map(world: &World, vnum: Vnum) -> String {
 
     let mut rooms = RoomMap::new(room_rows, room_columns);
 
-    rooms[(mid_row, mid_column)] = vnum;
-    rooms.place_neighbors(mid_row, mid_column, world);
+    rooms[(mid_row, mid_column)] = Some(location);
+    rooms.place_neighbors(mid_row, mid_column, entity_world);
 
     let map_rows = room_rows * 2 + 1;
     let map_columns = room_columns * 2 + 1;
@@ -107,16 +113,16 @@ pub(crate) fn make_map(world: &World, vnum: Vnum) -> String {
 
     for row in 0..room_rows {
         for column in 0..room_columns {
-            let vnum = rooms[(row, column)];
-            if vnum == Vnum(0) {
-                continue;
-            }
+            let room_id = match rooms[(row, column)] {
+                Some(room_id) => room_id,
+                None => continue,
+            };
 
-            let room = world.room(vnum);
+            let room = entity_world.entity_info(room_id);
 
             let map_position = (row * 2 + 1) * map_columns + (column * 2 + 1);
 
-            let color = match room.sector.as_str() {
+            let color = match room.sector().unwrap_or("inside") {
                 "city" => b'S',
                 "inside" => b'y',
                 "field" => b'Y',
@@ -144,7 +150,7 @@ pub(crate) fn make_map(world: &World, vnum: Vnum) -> String {
             room_map[map_position] = MapElement::Room(color, room_glyph);
 
             for (dir, row_offset, column_offset, dir_name) in EXITS {
-                if room.exits.iter().find(|e| e.name == *dir_name).is_some() {
+                if room.exits().find(|e| e.keyword() == *dir_name).is_some() {
                     let exit_position = map_position as isize
                         + (*row_offset as isize * map_columns as isize)
                         + *column_offset as isize;
