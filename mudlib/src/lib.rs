@@ -1,25 +1,26 @@
 use std::{collections::BTreeMap, net::SocketAddr, panic::catch_unwind, path::Path};
 
-use commands::process_player_command;
 use libtelnet_rs::{events::TelnetEvents, Parser};
 use netcore::{EntryCode, ExitCode, NetServer, Source};
 use serde::{Deserialize, Serialize};
 
+use acting::Players;
 use colors::colorize;
-use players::Players;
+use commands::process_player_command;
 use state::WorldState;
 
-mod acting;
-mod colors;
-mod commands;
-mod entity;
-mod file_parser;
-mod load;
-mod mapper;
-mod players;
-mod socials;
-mod state;
-mod world;
+mod acting; // Process and output things like "$n flexes $s muscles."
+mod colors; // Turn "`w" to "\e[37m"
+mod commands; // do_say, do_look, do_get, etc
+mod components; // Types of game data (mob, obj, etc) attached to entities
+mod entity; // Every object in the world and relation between objects
+mod file_parser; // DoW area format parser primitives
+mod import; // Convert a DoW world to EntityWorld entities
+mod load; // DoW area loader
+mod mapper; // Map generator
+mod socials; // Load socials from socials.txt
+mod state; // Main game object, glues everything together
+mod world; // Read-only representation of a set of DoW areas
 
 #[derive(Serialize, Deserialize)]
 struct ConnectionState {
@@ -222,7 +223,11 @@ pub extern "C" fn do_things(net_server: &mut NetServer, entry_code: EntryCode) -
                                             .expect("Checked in previous match arm");
 
                                         let old_game = catch_unwind(move || {
-                                            process_player_command(&mut game.world_state, player, words);
+                                            process_player_command(
+                                                &mut game.world_state,
+                                                player,
+                                                words,
+                                            );
                                             game
                                         });
 

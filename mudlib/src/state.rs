@@ -1,4 +1,11 @@
-use crate::{commands::update_entity_world, entity::EntityWorld, players::{PlayerEcho, Players}, socials::Socials, world::World};
+use crate::{
+    acting::{PlayerEcho, Players},
+    commands::update_entity_world,
+    echo,
+    entity::EntityWorld,
+    socials::Socials,
+    world::World,
+};
 
 pub(super) struct WorldState {
     pub(crate) socials: Socials,
@@ -27,14 +34,21 @@ impl WorldState {
     }
 
     pub(super) fn add_player(&mut self, name: &str) {
-        let player_id = self.entity_world.add_player(name);
-        let starting_location = self.entity_world.landmark("gnomehill")
+        let player_components = self.entity_world.make_player_components(name);
+
+        let player_id = self.entity_world.add_player(name, player_components);
+        let starting_location = self
+            .entity_world
+            .landmark("gnomehill")
             .expect("Starting location should exist");
         self.entity_world.move_entity(player_id, starting_location);
 
-        self.players.player_echoes.insert(name.to_string(), PlayerEcho {
-            echo_buffer: String::new(),
-            current_target_type: None,
-        });
+        self.players
+            .player_echoes
+            .insert(name.to_string(), PlayerEcho::default());
+
+        let player = self.entity_world.entity_info(player_id);
+        let mut act = self.players.act_alone(&player);
+        echo!(act.others(), "$^$n materializes from thin air.\r\n");
     }
 }

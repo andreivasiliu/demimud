@@ -1,15 +1,15 @@
 use string_interner::StringInterner;
 
+use crate::world::{common_direction, long_direction, opposite_direction};
 use crate::{
     acting::EscapeVariables,
+    acting::Players,
     echo,
     entity::{EntityId, EntityWorld},
-    players::Players,
     socials::Socials,
     state::WorldState,
 };
 use crate::{entity::Found, mapper::make_map};
-use crate::world::{common_direction, long_direction, opposite_direction};
 
 struct EntityAgent<'e, 'p> {
     entity_world: &'e mut EntityWorld,
@@ -99,7 +99,9 @@ pub(crate) fn process_player_command(world_state: &mut WorldState, player: &str,
         Some(id) => id,
         None => {
             if let Some(player_echo) = world_state.players.player_echoes.get_mut(player) {
-                player_echo.echo_buffer.push_str("But you don't seem to have a body.");
+                player_echo
+                    .echo_buffer
+                    .push_str("But you don't seem to have a body.");
             }
             return;
         }
@@ -155,10 +157,14 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         let mut out = act.myself();
 
         // Title
-        echo!(out, "\x1b[33m{}\x1b[0m\r\n", room.internal_title());
+        echo!(
+            out,
+            "\x1b[33m{}\x1b[0m\r\n",
+            room.component_info().internal_title()
+        );
 
         // Description
-        let description = room.internal_description();
+        let description = room.component_info().internal_description();
         echo!(out, "{}", description);
         if !description.ends_with("\r") && !description.ends_with("\n") {
             echo!(out, "\r\n");
@@ -174,7 +180,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
                 echo!(out, ", ");
             }
 
-            echo!(out, "{}", exit.keyword());
+            echo!(out, "{}", exit.component_info().keyword());
         }
 
         if first_exit {
@@ -185,12 +191,20 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
         // Objects
         for object in room.objects() {
-            echo!(out, "\x1b[36m{}\x1b[0m\r\n", object.lateral_description());
+            echo!(
+                out,
+                "\x1b[36m{}\x1b[0m\r\n",
+                object.component_info().lateral_description()
+            );
         }
 
         // Mobiles
         for mobile in room.mobiles() {
-            echo!(out, "\x1b[35m{}\x1b[0m\r\n", mobile.lateral_description());
+            echo!(
+                out,
+                "\x1b[35m{}\x1b[0m\r\n",
+                mobile.component_info().lateral_description()
+            );
         }
 
         // Players
@@ -199,7 +213,11 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
                 continue;
             }
 
-            echo!(out, "\x1b[1;35m{}\x1b[0m\r\n", player.lateral_description());
+            echo!(
+                out,
+                "\x1b[1;35m{}\x1b[0m\r\n",
+                player.component_info().lateral_description()
+            );
         }
     }
 
@@ -222,13 +240,16 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
                 unreachable!("The matcher accepts everything");
             }
             Found::Nothing => {
-                echo!(act.myself(), "You don't see anything named like that here.\r\n");
+                echo!(
+                    act.myself(),
+                    "You don't see anything named like that here.\r\n"
+                );
                 return;
             }
         };
 
         // Description
-        let description = target.external_description();
+        let description = target.component_info().external_description();
         let newline = if description.ends_with("\r") || description.ends_with("\n") {
             ""
         } else {
@@ -254,7 +275,11 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
                 } else {
                     echo!(act.myself(), ", ");
                 }
-                echo!(act.myself(), "{}", item.short_description());
+                echo!(
+                    act.myself(),
+                    "{}",
+                    item.component_info().short_description()
+                );
             }
         }
         if !first {
@@ -264,12 +289,17 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         // Equipment
         let mut first = true;
         for item in target.contained_entities() {
-            if let Some(location) =  item.equipped() {
+            if let Some(location) = item.equipped() {
                 if first {
                     echo!(act.myself(), "$^$E is wearing:\r\n");
                     first = false;
                 }
-                echo!(act.myself(), "  `S[`y{}`S]:`^ {}\r\n", location, item.short_description());
+                echo!(
+                    act.myself(),
+                    "  `S[`y{}`S]:`^ {}\r\n",
+                    location,
+                    item.component_info().short_description()
+                );
             }
         }
     }
@@ -452,8 +482,16 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         if let Some(to_room_id) = exit.leads_to() {
             let exit_id = exit.entity_id();
 
-            echo!(act.myself(), "You walk {}.\r\n", exit.keyword());
-            echo!(act.others(), "$^$n leaves {}.\r\n", exit.keyword());
+            echo!(
+                act.myself(),
+                "You walk {}.\r\n",
+                exit.component_info().keyword()
+            );
+            echo!(
+                act.others(),
+                "$^$n leaves {}.\r\n",
+                exit.component_info().keyword()
+            );
             self.entity_world.move_entity(self.entity_id, to_room_id);
 
             // Reacquire everything, the acting stage is now changed.
@@ -463,7 +501,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
             echo!(
                 act.others(),
                 "$^$n arrives from the {}.\r\n",
-                opposite_direction(exit.keyword())
+                opposite_direction(exit.component_info().keyword())
             );
 
             // Admire new surroundings.
@@ -485,7 +523,10 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         echo!(act.myself(), "You see the following exits:\r\n");
         for exit in room.exits() {
             let other_room = if let Some(leads_to) = exit.leads_to() {
-                self.entity_world.entity_info(leads_to).internal_title()
+                self.entity_world
+                    .entity_info(leads_to)
+                    .component_info()
+                    .internal_title()
             } else {
                 "`DThe Void`^"
             };
@@ -493,8 +534,8 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
             echo!(
                 act.myself(),
                 "  `W{}`^: {} leading to `y{}`^.\r\n",
-                exit.keyword(),
-                exit.short_description(),
+                exit.component_info().keyword(),
+                exit.component_info().short_description(),
                 other_room
             )
         }
@@ -764,9 +805,9 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
             echo!(
                 act.myself(),
                 "{}",
-                EscapeVariables(item.short_description())
+                EscapeVariables(item.component_info().short_description())
             );
-            column += item.short_description().len();
+            column += item.component_info().short_description().len();
         }
         echo!(act.myself(), "\r\n");
     }
@@ -779,7 +820,12 @@ pub(super) fn update_entity_world(world_state: &mut WorldState) {
     let mut wanderers = Vec::new();
 
     for entity in entity_world.all_entities() {
-        if !entity.wander() || !random_bits(4) {
+        let wander = match &entity.components().mobile {
+            Some(mobile) => mobile.wander,
+            None => continue,
+        };
+
+        if !wander || !random_bits(4) {
             continue;
         }
 
@@ -791,7 +837,7 @@ pub(super) fn update_entity_world(world_state: &mut WorldState) {
         if let Some(exit) = room.exits().nth(random_exit) {
             let entity_id = entity.entity_id();
 
-            let exit_symbol = interner.get_or_intern(exit.keyword());
+            let exit_symbol = interner.get_or_intern(exit.component_info().keyword());
             wanderers.push((entity_id, exit_symbol));
         }
     }

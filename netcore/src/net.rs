@@ -72,7 +72,9 @@ impl NetServer {
     pub fn receive_event(&mut self) -> (Source, NetEvent<'_>) {
         if let Some(pending_token) = self.pending_errors.keys().next() {
             let token = *pending_token;
-            let event = self.pending_errors.remove(&token)
+            let event = self
+                .pending_errors
+                .remove(&token)
                 .expect("Key checked via iterator");
             return (Source(token.0), event);
         }
@@ -186,7 +188,7 @@ impl NetServer {
             // It's already pending a different kind of disconnect.
             return;
         }
-        
+
         let connection = self
             .connections
             .get_mut(&token)

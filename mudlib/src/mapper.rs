@@ -48,13 +48,16 @@ impl RoomMap {
         let room = entity_world.entity_info(room_id);
 
         for (_, row_offset, column_offset, dir_name) in EXITS {
-            if let Some(exit) = room.exits().find(|e| e.keyword() == *dir_name) {
+            if let Some(exit) = room
+                .exits()
+                .find(|e| e.component_info().keyword() == *dir_name)
+            {
                 let other_room = match exit.leads_to() {
                     Some(other_room) => entity_world.entity_info(other_room),
                     None => continue,
                 };
 
-                if room.area() != other_room.area() {
+                if room.components().general.area != other_room.components().general.area {
                     continue;
                 }
 
@@ -122,7 +125,13 @@ pub(crate) fn make_map(entity_world: &EntityWorld, location: EntityId) -> String
 
             let map_position = (row * 2 + 1) * map_columns + (column * 2 + 1);
 
-            let color = match room.sector().unwrap_or("inside") {
+            let color = match room
+                .components()
+                .general
+                .sector
+                .as_deref()
+                .unwrap_or("inside")
+            {
                 "city" => b'S',
                 "inside" => b'y',
                 "field" => b'Y',
@@ -150,7 +159,11 @@ pub(crate) fn make_map(entity_world: &EntityWorld, location: EntityId) -> String
             room_map[map_position] = MapElement::Room(color, room_glyph);
 
             for (dir, row_offset, column_offset, dir_name) in EXITS {
-                if room.exits().find(|e| e.keyword() == *dir_name).is_some() {
+                if room
+                    .exits()
+                    .find(|e| e.component_info().keyword() == *dir_name)
+                    .is_some()
+                {
                     let exit_position = map_position as isize
                         + (*row_offset as isize * map_columns as isize)
                         + *column_offset as isize;

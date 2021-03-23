@@ -1,7 +1,32 @@
+use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter, Result, Write};
 
 use crate::entity::EntityInfo;
-use crate::{players::Players, world::Gender};
+use crate::world::Gender;
+
+pub(crate) struct Players {
+    pub(crate) player_echoes: BTreeMap<String, PlayerEcho>,
+}
+
+#[derive(Default)]
+pub(crate) struct PlayerEcho {
+    pub echo_buffer: String,
+    current_target_type: Option<TargetType>,
+}
+
+impl Players {
+    pub fn act_alone<'p, 'e>(&'p mut self, current: &'e dyn Actor) -> ActingStage<'p, 'e> {
+        ActingStage::new(self, current, None)
+    }
+
+    pub fn act_with<'p, 'e>(
+        &'p mut self,
+        current: &'e dyn Actor,
+        target: &'e dyn Actor,
+    ) -> ActingStage<'p, 'e> {
+        ActingStage::new(self, current, Some(target))
+    }
+}
 
 pub trait Actor {
     fn is_player(&self, player_name: &str) -> bool;
@@ -34,9 +59,9 @@ impl<'e> Actor for EntityInfo<'e> {
 
     fn short_description(&self, f: &mut Formatter, capitalized: bool) -> Result {
         if !capitalized {
-            self.short_description().fmt(f)
+            self.component_info().short_description().fmt(f)
         } else {
-            let mut short_description = self.short_description();
+            let mut short_description = self.component_info().short_description();
 
             if let Some(first_character) = short_description.chars().next() {
                 first_character.to_uppercase().fmt(f)?;
@@ -49,13 +74,13 @@ impl<'e> Actor for EntityInfo<'e> {
 
     fn pronouns(&self, capitalized: bool) -> (&str, &str, &str) {
         if !capitalized {
-            match self.gender() {
+            match self.component_info().gender() {
                 Gender::Male => ("he", "him", "his"),
                 Gender::Female => ("she", "her", "her"),
                 Gender::Neutral => ("it", "it", "its"),
             }
         } else {
-            match self.gender() {
+            match self.component_info().gender() {
                 Gender::Male => ("He", "Him", "His"),
                 Gender::Female => ("She", "Her", "Her"),
                 Gender::Neutral => ("It", "It", "Its"),
@@ -155,14 +180,14 @@ pub(crate) struct EscapeVariables<'m>(pub &'m str);
 impl Display for EscapeVariables<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         let mut message = self.0;
-        
+
         loop {
             let var_index = message.find('$');
 
             match var_index {
                 None => {
                     return message.fmt(f);
-                },
+                }
                 Some(0) => (),
                 Some(index) => {
                     message[..index].fmt(f)?;
@@ -193,7 +218,7 @@ impl Display for ReplaceActVariables<'_, '_> {
             match var_index {
                 None => {
                     return message.fmt(f);
-                },
+                }
                 Some(0) => (),
                 Some(index) => {
                     capitalized = false;
@@ -244,7 +269,7 @@ impl Display for ReplaceActVariables<'_, '_> {
                     c.fmt(f)?;
                     message = &message[1 + c.len_utf8()..];
                     continue;
-                },
+                }
                 None => {
                     '$'.fmt(f)?;
                     break;
