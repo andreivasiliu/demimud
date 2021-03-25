@@ -50,7 +50,7 @@ pub trait Actor {
 
 impl<'e> Actor for EntityInfo<'e> {
     fn is_player(&self, player_name: &str) -> bool {
-        self.is_player(player_name)
+        self.is_player_with_name(player_name)
     }
 
     fn colocated_with_player(&self, player_name: &str) -> bool {

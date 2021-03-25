@@ -1,23 +1,30 @@
 use string_interner::StringInterner;
 
-use crate::world::Gender;
+use crate::world::{Gender, MobProgTrigger, Shop, Vnum};
 
+#[derive(Clone)]
 pub(crate) struct IntStr {
     symbol: string_interner::symbol::SymbolU32,
 }
 
+#[derive(Clone)]
 pub(crate) struct Components {
     pub act_info: ActInfo,
     pub descriptions: Descriptions,
     pub general: GeneralData,
     pub mobile: Option<Mobile>,
+    pub object: Option<Object>,
+    pub door: Option<Door>,
+    pub mobprog: Option<MobProg>,
 }
 
+#[derive(Clone)]
 pub(crate) struct GeneralData {
     pub area: String,
     pub sector: Option<String>,
     pub entity_type: EntityType,
     pub equipped: Option<String>,
+    pub command_queue: Vec<(u16, String)>,
 }
 
 #[derive(Hash, Clone, Copy, PartialEq, Eq)]
@@ -28,18 +35,42 @@ pub enum EntityType {
     Room,
     Exit,
     ExtraDescription,
+    MobProg,
 }
 
+#[derive(Clone)]
 pub(crate) struct Mobile {
     pub wander: bool,
+    pub shopkeeper: Option<Shop>,
 }
 
+#[derive(Clone)]
+pub(crate) struct Object {
+    pub cost: i32,
+    pub key: Option<Vnum>,
+}
+
+#[derive(Clone)]
+pub(crate) struct Door {
+    pub closed: bool,
+    pub locked: bool,
+    pub key: Option<Vnum>,
+}
+
+#[derive(Clone)]
+pub(crate) struct MobProg {
+    pub trigger: MobProgTrigger,
+    pub code: String,
+}
+
+#[derive(Clone)]
 pub(crate) struct ActInfo {
     keyword: IntStr,
     short_description: IntStr,
     gender: Gender,
 }
 
+#[derive(Clone)]
 pub(crate) struct Descriptions {
     /// Internal title, seen when looking in the room inside of it (aka room title).
     /// Example: "In a forest."

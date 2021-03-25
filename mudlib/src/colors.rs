@@ -21,6 +21,7 @@ static COLOR_CODES: &[(char, &'static str)] = &[
     ('W', "\x1b[1;37m"),
     ('^', "\x1b[0m"),
     ('1', "\r\n"),
+    ('N', "Demi MUD"),
 ];
 
 lazy_static! {

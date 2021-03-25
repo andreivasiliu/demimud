@@ -159,15 +159,23 @@ pub(crate) fn make_map(entity_world: &EntityWorld, location: EntityId) -> String
             room_map[map_position] = MapElement::Room(color, room_glyph);
 
             for (dir, row_offset, column_offset, dir_name) in EXITS {
-                if room
+                if let Some(exit_entity) = room
                     .exits()
                     .find(|e| e.component_info().keyword() == *dir_name)
-                    .is_some()
                 {
                     let exit_position = map_position as isize
                         + (*row_offset as isize * map_columns as isize)
                         + *column_offset as isize;
-                    room_map[exit_position as usize] = MapElement::Exit(*dir);
+
+                    let closed_door = exit_entity
+                        .components()
+                        .door
+                        .as_ref()
+                        .map(|door| door.closed)
+                        == Some(true);
+
+                    let symbol = if closed_door { b'+' } else { *dir };
+                    room_map[exit_position as usize] = MapElement::Exit(symbol);
                 }
             }
         }

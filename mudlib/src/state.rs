@@ -1,17 +1,12 @@
-use crate::{
-    acting::{PlayerEcho, Players},
-    commands::update_entity_world,
-    echo,
-    entity::EntityWorld,
-    socials::Socials,
-    world::World,
-};
+use crate::{acting::{PlayerEcho, Players}, commands::update_entity_world, echo, entity::EntityWorld, import::{VnumTemplates, import_from_world}, socials::Socials, world::World};
 
 pub(super) struct WorldState {
     pub(crate) socials: Socials,
     pub(crate) entity_world: EntityWorld,
+    pub(crate) vnum_templates: VnumTemplates,
 
     pub(crate) players: Players,
+    pub(crate) wander_ticks: u8,
 }
 
 pub(super) fn create_state(world: World, socials: Socials) -> WorldState {
@@ -19,12 +14,15 @@ pub(super) fn create_state(world: World, socials: Socials) -> WorldState {
         player_echoes: Default::default(),
     };
 
-    let entity_world = EntityWorld::from_world(&world);
+    let mut entity_world = EntityWorld::new();
+    let vnum_templates = import_from_world(&mut entity_world, &world);
 
     WorldState {
         entity_world,
+        vnum_templates,
         socials,
         players,
+        wander_ticks: 0,
     }
 }
 

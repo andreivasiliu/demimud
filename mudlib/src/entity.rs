@@ -8,8 +8,7 @@ use string_interner::StringInterner;
 
 use crate::{
     components::{Components, EntityComponentInfo, EntityType, GeneralData, InternComponent},
-    import::import_from_world,
-    world::{Gender, World},
+    world::Gender,
 };
 
 pub(crate) struct EntityWorld {
@@ -31,6 +30,7 @@ struct Entity {
     contained_by: Option<RawEntityId>,
     leads_to: Option<RawEntityId>,
     leads_from: Vec<RawEntityId>,
+    created_in_era: u16,
 
     player: Option<String>,
 }
@@ -39,6 +39,12 @@ struct Entity {
 pub(crate) struct EntityId {
     id: RawEntityId,
     era: u16,
+}
+
+#[derive(Hash, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PermanentEntityId {
+    id: RawEntityId,
+    created_in_era: u16,
 }
 
 #[derive(Hash, Clone, Copy, PartialEq, Eq)]
@@ -53,6 +59,7 @@ pub(crate) struct EntityInfo<'e> {
 
 pub(crate) struct EntityInfoMut<'e> {
     entity: &'e mut Entity,
+    era: u16,
 }
 
 pub(crate) enum Found<'a> {
@@ -83,7 +90,7 @@ impl IdGenerator {
 }
 
 impl EntityWorld {
-    fn new() -> Self {
+    pub fn new() -> Self {
         let mut interner = StringInterner::new();
         let mut id_generator = IdGenerator {
             next_entity_id: NonZeroUsize::new(1).expect("1 != 0"),
@@ -107,14 +114,19 @@ impl EntityWorld {
                     sector: None,
                     entity_type: EntityType::Room,
                     equipped: None,
+                    command_queue: Vec::new(),
                 },
                 mobile: None,
+                object: None,
+                door: None,
+                mobprog: None,
             },
             raw_entity_id: id_generator.next(),
             contents: Vec::new(),
             contained_by: None,
             leads_to: None,
             leads_from: Vec::new(),
+            created_in_era: 1,
             player: None,
         };
 
@@ -190,8 +202,12 @@ impl EntityWorld {
                 sector: None,
                 entity_type: EntityType::Player,
                 equipped: None,
+                command_queue: Vec::new(),
             },
             mobile: None,
+            object: None,
+            door: None,
+            mobprog: None,
         }
     }
 
@@ -227,6 +243,22 @@ impl EntityWorld {
         entity_id.id
     }
 
+    /// Attempt to retrieve an entity from an old ID; this entity may no longer exist.
+    pub fn old_entity(&self, permanent_entity_id: &PermanentEntityId) -> Option<EntityInfo<'_>> {
+        if let Some(entity) = self.entities.get(&permanent_entity_id.id) {
+            if entity.created_in_era == permanent_entity_id.created_in_era {
+                Some(EntityInfo {
+                    entity: entity,
+                    entity_world: self,
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
     fn entity(&self, entity_id: EntityId) -> &Entity {
         self.entity_raw(self.raw_entity_id(entity_id))
     }
@@ -254,8 +286,8 @@ impl EntityWorld {
             .expect("Internally constructed IDs should be correct");
 
         EntityInfo {
-            entity: &entity,
-            entity_world: &self,
+            entity: entity,
+            entity_world: self,
         }
     }
 
@@ -269,15 +301,24 @@ impl EntityWorld {
     }
 
     pub fn entity_info_mut(&mut self, entity_id: EntityId) -> EntityInfoMut<'_> {
+        let era = self.era;
         let entity = self.entity_mut(entity_id);
 
-        EntityInfoMut { entity }
+        EntityInfoMut { entity, era }
     }
 
     pub fn all_entities(&self) -> impl Iterator<Item = EntityInfo<'_>> {
         self.entities.values().map(move |entity| EntityInfo {
             entity,
             entity_world: self,
+        })
+    }
+
+    pub fn all_entities_mut(&mut self) -> impl Iterator<Item = EntityInfoMut<'_>> {
+        let era = self.era;
+        self.entities.values_mut().map(move |entity| EntityInfoMut {
+            entity,
+            era,
         })
     }
 
@@ -338,6 +379,7 @@ impl EntityWorld {
             contained_by: Some(container),
             leads_to: None,
             leads_from: Vec::new(),
+            created_in_era: self.era,
             player: None,
         };
 
@@ -366,17 +408,16 @@ impl EntityWorld {
         self.entity_mut_raw(exit_id).leads_to = Some(to_room_id);
         self.entity_mut_raw(to_room_id).leads_from.push(exit_id);
     }
-
-    pub(crate) fn from_world(world: &World) -> EntityWorld {
-        let mut entity_world = EntityWorld::new();
-
-        import_from_world(&mut entity_world, world);
-
-        entity_world
-    }
 }
 
 impl<'e> EntityInfoMut<'e> {
+    pub fn entity_id(&self) -> EntityId {
+        EntityId {
+            id: self.entity.raw_entity_id,
+            era: self.era,
+        }
+    }
+
     pub fn components(&'e mut self) -> &'e mut Components {
         &mut self.entity.components
     }
@@ -388,6 +429,17 @@ impl<'e> EntityInfo<'e> {
             id: self.entity.raw_entity_id,
             era: self.entity_world.era,
         }
+    }
+
+    pub fn permanent_entity_id(&self) -> PermanentEntityId {
+        PermanentEntityId {
+            id: self.entity.raw_entity_id,
+            created_in_era: self.entity.created_in_era,
+        }
+    }
+
+    pub fn main_keyword(&self) -> &str {
+        self.component_info().keyword().split_whitespace().last().unwrap_or("unknown")
     }
 
     pub fn components(&self) -> &'e Components {
@@ -418,6 +470,13 @@ impl<'e> EntityInfo<'e> {
         })
     }
 
+    pub fn room(&self) -> EntityInfo<'e> {
+        EntityInfo {
+            entity: self.entity_world.entity(self.entity_world.room_of(self.entity_id())) ,
+            entity_world: self.entity_world,
+        }
+    }
+
     pub fn is_exit(&self) -> bool {
         matches!(self.entity.components.general.entity_type, EntityType::Exit)
     }
@@ -436,7 +495,14 @@ impl<'e> EntityInfo<'e> {
         )
     }
 
-    pub fn is_player(&self, player_name: &str) -> bool {
+    pub fn is_player(&self) -> bool {
+        matches!(
+            self.entity.components.general.entity_type,
+            EntityType::Player
+        )
+    }
+
+    pub fn is_player_with_name(&self, player_name: &str) -> bool {
         self.entity_world.player_entities.get(player_name) == Some(&self.entity.raw_entity_id)
     }
 

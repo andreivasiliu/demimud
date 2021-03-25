@@ -27,6 +27,11 @@ pub(super) struct Exit {
     pub(super) name: String,
     pub(super) vnum: Vnum,
     pub(super) description: Option<String>,
+
+    pub(super) has_door: bool,
+    pub(super) is_closed: bool,
+    pub(super) is_locked: bool,
+    pub(super) key: Option<Vnum>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -55,9 +60,10 @@ pub(super) struct Mobile {
     pub(super) short_description: String,
     pub(super) long_description: String,
     pub(super) description: String,
+
+    pub(super) mobprog_triggers: Vec<(MobProgTrigger, Vnum)>,
     pub(super) gender: Gender,
     pub(super) area: String,
-
     pub(super) sentinel: bool,
     pub(super) unseen: bool,
 }
@@ -69,6 +75,8 @@ pub(super) struct Object {
     pub(super) short_description: String,
     pub(super) description: String,
     pub(super) area: String,
+    pub(super) cost: i32,
+    pub(super) item_type: String,
 
     #[serde(default)]
     pub(super) extra_descriptions: Vec<ExtraDescription>,
@@ -113,6 +121,41 @@ pub(super) enum ResetCommand {
     },
 }
 
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub(super) struct Shop {
+    pub vnum: Vnum,
+    pub buy_types: Vec<String>,
+    pub sell_types: Vec<String>,
+    pub profit_buy: u32,
+    pub profit_sell: u32,
+    pub open_hour: u8,
+    pub close_hour: u8,
+}
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub(super) struct MobProg {
+    pub vnum: Vnum,
+    pub title: String,
+    pub code: String,
+    pub disabled: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub(super) enum MobProgTrigger {
+    Random { chance: u8 },
+    Greet { chance: u8 },
+    Entry { chance: u8 },
+    Speech { pattern: String },
+    Act { pattern: String },
+    Exit { direction: String },
+    Bribe { amount: usize },
+    Give { item_vnum: Vnum },
+    Kill { chance: u8 },
+    Death { chance: u8 },
+    Hour { hour: u8 },
+    LoginRoom,
+}
+
 #[derive(Serialize, Deserialize)]
 pub(super) struct Area {
     pub(super) area_data: AreaData,
@@ -121,6 +164,8 @@ pub(super) struct Area {
     pub(super) objects: Vec<Object>,
     pub(super) mobiles: Vec<Mobile>,
     pub(super) resets: Vec<ResetCommand>,
+    pub(super) shops: Vec<Shop>,
+    pub(super) mobprogs: Vec<MobProg>,
 }
 
 #[derive(Default)]
@@ -130,6 +175,8 @@ pub(super) struct World {
     pub(super) rooms: Vec<Room>,
     pub(super) objects: Vec<Object>,
     pub(super) mobiles: Vec<Mobile>,
+    pub(super) shops: Vec<Shop>,
+    pub(super) mobprogs: Vec<MobProg>,
 }
 
 pub(super) fn load_world(path: &Path) -> World {
@@ -171,25 +218,25 @@ pub(super) fn load_world(path: &Path) -> World {
             }
             world.mobiles[vnum] = mobile;
         }
+
+        for shop in area.shops {
+            let vnum = shop.vnum.0;
+            if world.shops.len() <= vnum {
+                world.shops.resize(vnum + 1, Shop::default());
+            }
+            world.shops[vnum] = shop;
+        }
+
+        for mobprog in area.mobprogs {
+            let vnum = mobprog.vnum.0;
+            if world.mobprogs.len() <= vnum {
+                world.mobprogs.resize(vnum + 1, MobProg::default());
+            }
+            world.mobprogs[vnum] = mobprog;
+        }
     }
 
     world
-}
-
-impl World {
-    pub(super) fn mobile(&self, vnum: Vnum) -> &Mobile {
-        &self
-            .mobiles
-            .get(vnum.0)
-            .unwrap_or_else(|| panic!("Mobile v{} not found", vnum.0))
-    }
-
-    pub(super) fn object(&self, vnum: Vnum) -> &Object {
-        &self
-            .objects
-            .get(vnum.0)
-            .unwrap_or_else(|| panic!("Object v{} not found", vnum.0))
-    }
 }
 
 pub(crate) fn long_direction(direction: &str) -> &str {

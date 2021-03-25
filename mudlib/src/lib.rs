@@ -14,13 +14,13 @@ mod colors; // Turn "`w" to "\e[37m"
 mod commands; // do_say, do_look, do_get, etc
 mod components; // Types of game data (mob, obj, etc) attached to entities
 mod entity; // Every object in the world and relation between objects
-mod file_parser; // DoW area format parser primitives
+mod file_parser; // Dawn of Time area format parser primitives
 mod import; // Convert a DoW world to EntityWorld entities
-mod load; // DoW area loader
+mod load; // Dawn of Time area loader
 mod mapper; // Map generator
 mod socials; // Load socials from socials.txt
 mod state; // Main game object, glues everything together
-mod world; // Read-only representation of a set of DoW areas
+mod world; // Read-only representation of a set of Dawn of Time areas
 
 #[derive(Serialize, Deserialize)]
 struct ConnectionState {
@@ -100,8 +100,6 @@ pub extern "C" fn do_things(net_server: &mut NetServer, entry_code: EntryCode) -
         &mut game.world_state.players,
         &mut connection_state,
     );
-
-    let mut pulse_mobiles = 0;
 
     let restart = loop {
         let mut schedule_restart = false;
@@ -247,23 +245,17 @@ pub extern "C" fn do_things(net_server: &mut NetServer, entry_code: EntryCode) -
                 }
             }
             netcore::NetEvent::Tick => {
-                pulse_mobiles += 1;
-
-                if pulse_mobiles >= 4 {
-                    pulse_mobiles = 0;
-
-                    let old_game = catch_unwind(move || {
-                        game.world_state.update_world();
-                        game
-                    });
-                    game = match old_game {
-                        Ok(game) => game,
-                        Err(_err) => {
-                            // Old game's kaput, make a new one
-                            Game::new(&mut connection_state, "crashed")
-                        }
-                    };
-                }
+                let old_game = catch_unwind(move || {
+                    game.world_state.update_world();
+                    game
+                });
+                game = match old_game {
+                    Ok(game) => game,
+                    Err(_err) => {
+                        // Old game's kaput, make a new one
+                        Game::new(&mut connection_state, "crashed")
+                    }
+                };
             }
         };
 

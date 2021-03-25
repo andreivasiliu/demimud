@@ -57,7 +57,9 @@ impl<'a> FileParser<'a> {
     }
 
     pub fn skip_one_newline(&mut self) {
-        if &self.0[..2] == "\r\n" {
+        if self.0.is_empty() {
+            return;
+        } else if self.0.len() > 1 && &self.0[..2] == "\r\n" {
             self.0 = &self.0[2..];
         } else if &self.0[..1] == "\n" {
             self.0 = &self.0[1..];
