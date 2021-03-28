@@ -45,16 +45,40 @@ to make everything be an entity.
 
 Rooms, objects, mobs, players, are all rooms.
 
-The MUD is built to model all of its entities as containers, which allows for more natural handling of e.g. the insides of vehicles, picking up pets, allowing things to happen inside a player's inventory, etc.
+The MUD is built to model all of its entities as containers, which allows for
+more natural handling of e.g. the insides of vehicles, picking up pets,
+allowing things to happen inside a player's inventory, etc.
 
 ### Everything is an object
 
-Rooms and mobs are objects, and so are their exits. Someone can pick up a room, or a mob, or even pick up an exit. Don't worry, that mob is not stuck there, it can exit you by going through the exit you just picked up.
+Rooms and mobs are objects, and so are their exits. Someone can pick up a room,
+or a mob, or even pick up an exit. Don't worry, that mob is not stuck there, it
+can exit you by going through the exit you just picked up.
 
 ### Entities have components
 
-DemiMUD is not based on an Entity Component System, but it takes some concepts from it.
+DemiMUD is not based on an Entity Component System, but it takes some concepts
+from it.
 
-Rather than segregating things into types, things instead have capabilities. An object can be a weapon, have health, and be the target of a fireball, all at the same time.
+Rather than segregating things into types, things instead have capabilities. An
+object can be a weapon, have health, and be the target of a fireball, all at
+the same time.
 
-The capability to contain and be contained, to be adressed (short description and gender) and to be described (internal/external descriptions) are universal.
+The capability to contain and be contained, to be adressed (short description
+and gender) and to be described (internal/external descriptions) are universal.
+
+# Running
+
+Currently only tested on Windows; there might be issues with CRLF line endings
+on other systems.
+
+To build it, `git clone` this repoistory and run `cargo build --release`. You
+will need the Rust compiler (see https://rustup.rs) and any of its dependencies
+(e.g. MSVC build tools on Windows).
+
+The game currently uses area data from Dawn of Time and socials from
+Ultra-Envy, see the README.md file inside `./data/` on how to get them.
+
+To run it, run `cargo run --release` or run the `target/release/netcore`
+executable directly; `netcore` will then load `target/release/mudlib.dll` (or
+`.so` or `.dylib` on Linux/MacOS) from the binary's directory.

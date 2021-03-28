@@ -42,8 +42,11 @@ struct Game {
 
 impl Game {
     fn new(connection_state: &mut ConnectionState, reason: &str) -> Game {
-        let world = world::load_world(Path::new("mudlib/area"));
-        let socials = socials::load_socials(Path::new("mudlib/socials.txt"));
+        println!("Loading area data...");
+        let world = world::load_world(Path::new("data/area"));
+        println!("Loading socials.txt data...");
+        let socials = socials::load_socials(Path::new("data/socials.txt"));
+        println!("Importing areas into entity world...");
         let mut world_state = state::create_state(world, socials);
 
         for connection in connection_state.connections.values() {
@@ -55,6 +58,8 @@ impl Game {
         let mut game = Game {
             world_state: Box::new(world_state),
         };
+
+        println!("Entity world loaded, game ready.");
 
         let message = format!(
             "`D[`Rsystem`D]: `WOld game {}; new game created.`^\r\n",
@@ -289,7 +294,7 @@ pub extern "C" fn do_things(net_server: &mut NetServer, entry_code: EntryCode) -
         }
     };
 
-    println!("Done!");
+    println!("Exiting mudlib's main loop.");
 
     if restart {
         ExitCode::PleaseRestart {

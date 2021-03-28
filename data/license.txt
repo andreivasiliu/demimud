@@ -1,0 +1,11 @@
+The files in the data directory that come from DemiMUD are public domain.
+
+However, if you run ./setup.sh, it will download copyrighted material.
+
+Please check the respective licenses from their Git repositories before
+distributing them, and make sure your MUD outputs their respective license
+notices whenever someone connects to the MUD.
+
+The repositores are at:
+* https://github.com/mudhistoricalsociety/dawnoftime_1.69r
+* https://github.com/DikuMUDOmnibus/Ultra-Envy

@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{fs::File, path::Path};
 
 use serde::{Deserialize, Serialize};
 
@@ -212,7 +212,7 @@ pub(super) fn load_world(path: &Path) -> World {
         .collect();
 
     for file_name in area_names {
-        let contents = std::fs::read_to_string(&path.join(file_name)).unwrap();
+        let contents = lossy_read_to_string(&path.join(file_name)).unwrap();
         let area = crate::load::load_area(&contents);
 
         world.areas.push((area.area_data, area.resets));
@@ -259,6 +259,16 @@ pub(super) fn load_world(path: &Path) -> World {
     }
 
     world
+}
+
+/// Like std::fs::read_to_string, but ignores UTF8 errors
+fn lossy_read_to_string(path: &Path) -> Result<String, std::io::Error> {
+    use std::io::Read;
+
+    let mut bytes = Vec::new();
+    let mut file = File::open(path)?;
+    file.read_to_end(&mut bytes)?;
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 pub(crate) fn long_direction(direction: &str) -> &str {

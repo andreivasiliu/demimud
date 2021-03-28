@@ -59,9 +59,12 @@ impl<'a> FileParser<'a> {
     pub fn skip_one_newline(&mut self) {
         if self.0.is_empty() {
             return;
-        } else if self.0.len() > 1 && &self.0[..2] == "\r\n" {
-            self.0 = &self.0[2..];
-        } else if &self.0[..1] == "\n" {
+        } else if self.0.chars().next() == Some('\r') {
+            self.0 = &self.0[1..];
+            if self.0.chars().next() == Some('\n') {
+                self.0 = &self.0[1..];
+            }
+        } else if self.0.chars().next() == Some('\n') {
             self.0 = &self.0[1..];
         } else {
             self.panic_on_line("No newline found to skip");
