@@ -20,11 +20,13 @@ pub(crate) struct Components {
 
 #[derive(Clone)]
 pub(crate) struct GeneralData {
+    pub vnum: Vnum,
     pub area: String,
     pub sector: Option<String>,
     pub entity_type: EntityType,
     pub equipped: Option<String>,
     pub command_queue: Vec<(u16, String)>,
+    pub following: Option<String>,
 }
 
 #[derive(Hash, Clone, Copy, PartialEq, Eq)]
@@ -42,6 +44,7 @@ pub enum EntityType {
 pub(crate) struct Mobile {
     pub wander: bool,
     pub shopkeeper: Option<Shop>,
+    pub remember: Option<String>,
 }
 
 #[derive(Clone)]

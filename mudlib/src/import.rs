@@ -4,7 +4,11 @@ use std::collections::HashMap;
 
 use string_interner::StringInterner;
 
-use crate::{components::{Components, Door, EntityType, GeneralData, InternComponent, MobProg}, entity::{EntityId, EntityWorld, PermanentEntityId}, world::{Gender, MobProgTrigger, Mobile, Object, ResetCommand, World}};
+use crate::components::{Components, Door, EntityType, GeneralData, InternComponent, MobProg};
+use crate::entity::{EntityId, EntityWorld, PermanentEntityId};
+use crate::world::{
+    Gender, MobProgTrigger, Mobile, Object, ObjectFlags, ResetCommand, Vnum, World,
+};
 
 pub(crate) struct VnumTemplates {
     pub vnum_to_entity: Vec<Option<PermanentEntityId>>,
@@ -37,11 +41,13 @@ pub(crate) fn import_from_world(entity_world: &mut EntityWorld, world: &World) -
                     .interner
                     .descriptions(title, internal, &external, &lateral),
                 general: GeneralData {
+                    vnum: room.vnum,
                     area: room.area.to_string(),
                     sector: Some(room.sector.to_string()),
                     entity_type: EntityType::Room,
                     equipped: None,
                     command_queue: Vec::new(),
+                    following: None,
                 },
                 mobile: None,
                 object: None,
@@ -87,11 +93,13 @@ pub(crate) fn import_from_world(entity_world: &mut EntityWorld, world: &World) -
                     .interner
                     .descriptions(&title, &internal, external, &lateral),
                 general: GeneralData {
+                    vnum: Vnum(0),
                     area: room.area.to_string(),
                     sector: None,
                     entity_type: EntityType::Exit,
                     equipped: None,
                     command_queue: Vec::new(),
+                    following: None,
                 },
                 mobile: None,
                 object: None,
@@ -126,11 +134,13 @@ pub(crate) fn import_from_world(entity_world: &mut EntityWorld, world: &World) -
                     .interner
                     .descriptions(title, internal, external, &lateral),
                 general: GeneralData {
+                    vnum: Vnum(0),
                     area: room.area.to_string(),
                     sector: None,
                     entity_type: EntityType::ExtraDescription,
                     equipped: None,
                     command_queue: Vec::new(),
+                    following: None,
                 },
                 mobile: None,
                 object: None,
@@ -173,10 +183,18 @@ pub(crate) fn import_from_world(entity_world: &mut EntityWorld, world: &World) -
         mobile_components: Vec::with_capacity(world.mobiles.len()),
     };
 
-    vnum_templates.vnum_to_entity.resize(world.rooms.len(), None);
-    vnum_templates.vnum_to_mobprog.resize(world.rooms.len(), None);
-    vnum_templates.object_components.resize(world.rooms.len(), None);
-    vnum_templates.mobile_components.resize(world.rooms.len(), None);
+    vnum_templates
+        .vnum_to_entity
+        .resize(world.rooms.len(), None);
+    vnum_templates
+        .vnum_to_mobprog
+        .resize(world.rooms.len(), None);
+    vnum_templates
+        .object_components
+        .resize(world.rooms.len(), None);
+    vnum_templates
+        .mobile_components
+        .resize(world.rooms.len(), None);
 
     for room in &world.rooms {
         if room.vnum.0 != 0 {
@@ -215,19 +233,16 @@ pub(crate) fn import_from_world(entity_world: &mut EntityWorld, world: &World) -
                     room_limit: _,
                 } => {
                     let room_entity_id = room_vnum_to_id[&r_num.0];
-                    let mobile_components = vnum_templates.mobile_components[m_num.0].as_ref().expect("Mobile with vnum does not exist");
+                    let mobile_components = vnum_templates.mobile_components[m_num.0]
+                        .as_ref()
+                        .expect("Mobile with vnum does not exist");
 
-                    let mobile_entity_id = entity_world.insert_entity(
-                        room_entity_id,
-                        mobile_components.0.clone(),
-                    );
+                    let mobile_entity_id =
+                        entity_world.insert_entity(room_entity_id, mobile_components.0.clone());
                     last_mobile_id = Some(mobile_entity_id);
 
                     for mobprog_components in &mobile_components.1 {
-                        entity_world.insert_entity(
-                            mobile_entity_id,
-                            mobprog_components.clone(),
-                        );
+                        entity_world.insert_entity(mobile_entity_id, mobprog_components.clone());
                     }
                 }
                 ResetCommand::Object {
@@ -253,10 +268,30 @@ pub(crate) fn import_from_world(entity_world: &mut EntityWorld, world: &World) -
                 } => {
                     let last_mobile_id = last_mobile_id.unwrap();
 
-                    let object_id = load_object(o_num.0, last_mobile_id, &vnum_templates, entity_world);
+                    let object_id =
+                        load_object(o_num.0, last_mobile_id, &vnum_templates, entity_world);
                     let location = location.to_string();
                     let mut object_entity = entity_world.entity_info_mut(object_id);
                     object_entity.components().general.equipped = Some(location);
+                }
+                ResetCommand::Put {
+                    o_num,
+                    global_limit: _,
+                    c_num,
+                    container_limit: _,
+                } => {
+                    // FIXME: The iteration needs to be ordered to get the last object, which is not
+                    // possible to do with hashmaps; change this once entities use a Vec
+                    let mut container_id = None;
+                    for container in entity_world.all_entities() {
+                        if container.components().general.vnum == *c_num && container.is_object() {
+                            container_id = Some(container.entity_id());
+                            break;
+                        }
+                    }
+                    if let Some(container_id) = container_id {
+                        load_object(o_num.0, container_id, &vnum_templates, entity_world);
+                    }
                 }
             }
         }
@@ -265,7 +300,11 @@ pub(crate) fn import_from_world(entity_world: &mut EntityWorld, world: &World) -
     vnum_templates
 }
 
-fn import_mobile_components(mobile: &Mobile, world: &World, interner: &mut StringInterner) -> (Components, Vec<Components>) {
+fn import_mobile_components(
+    mobile: &Mobile,
+    world: &World,
+    interner: &mut StringInterner,
+) -> (Components, Vec<Components>) {
     let mut mobprogs = Vec::with_capacity(mobile.mobprog_triggers.len());
 
     let objective_pronoun = match mobile.gender {
@@ -285,26 +324,30 @@ fn import_mobile_components(mobile: &Mobile, world: &World, interner: &mut Strin
     );
     let lateral = &mobile.long_description;
 
-    let act_info = interner
-        .act_info(keyword, &short_description, mobile.gender);
-    let descriptions = interner
-        .descriptions(&title, &internal, external, lateral);
+    let act_info = interner.act_info(keyword, &short_description, mobile.gender);
+    let descriptions = interner.descriptions(&title, &internal, external, lateral);
 
-    let shop = world.shops.get(mobile.vnum.0).filter(|shop| shop.vnum.0 != 0);
+    let shop = world
+        .shops
+        .get(mobile.vnum.0)
+        .filter(|shop| shop.vnum.0 != 0);
 
     let mobile_components = Components {
         act_info,
         descriptions,
         general: GeneralData {
+            vnum: mobile.vnum,
             area: mobile.area.to_string(),
             sector: None,
             entity_type: EntityType::Mobile,
             equipped: None,
             command_queue: Vec::new(),
+            following: None,
         },
         mobile: Some(crate::components::Mobile {
             wander: !mobile.sentinel,
             shopkeeper: shop.cloned(),
+            remember: None,
         }),
         object: None,
         door: None,
@@ -331,8 +374,7 @@ fn import_mobile_components(mobile: &Mobile, world: &World, interner: &mut Strin
             MobProgTrigger::Hour { .. } => "on-hour",
             MobProgTrigger::LoginRoom { .. } => "on-login",
         };
-        let short_description =
-            format!("an {} mobprog titled '`S{}`^'", trigger, mobprog.title);
+        let short_description = format!("an {} mobprog titled '`S{}`^'", trigger, mobprog.title);
 
         let title = "Inside a mobprog.";
         let internal = "You are inside a mobprog. Instructions are floating all around the area.";
@@ -342,82 +384,61 @@ fn import_mobile_components(mobile: &Mobile, world: &World, interner: &mut Strin
         );
         let lateral = "A mobprog is installed here, affecting its surroundings.";
 
-        let act_info = interner.act_info(
-            keyword,
-            &short_description,
-            Gender::Neutral,
-        );
-        let descriptions = interner
-            .descriptions(title, internal, &external, lateral);
+        let act_info = interner.act_info(keyword, &short_description, Gender::Neutral);
+        let descriptions = interner.descriptions(title, internal, &external, lateral);
 
-        mobprogs.push(
-            Components {
-                act_info,
-                descriptions,
-                general: GeneralData {
-                    area: mobile.area.to_string(),
-                    sector: None,
-                    entity_type: EntityType::MobProg,
-                    equipped: None,
-                    command_queue: Vec::new(),
-                },
-                mobile: None,
-                object: None,
-                door: None,
-                mobprog: Some(MobProg {
-                    trigger: mobprog_trigger.clone(),
-                    code: mobprog.code.clone(),
-                }),
-            }
-        );
+        mobprogs.push(Components {
+            act_info,
+            descriptions,
+            general: GeneralData {
+                vnum: mobprog.vnum,
+                area: mobile.area.to_string(),
+                sector: None,
+                entity_type: EntityType::MobProg,
+                equipped: None,
+                command_queue: Vec::new(),
+                following: None,
+            },
+            mobile: None,
+            object: None,
+            door: None,
+            mobprog: Some(MobProg {
+                trigger: mobprog_trigger.clone(),
+                code: mobprog.code.clone(),
+            }),
+        });
     }
 
     (mobile_components, mobprogs)
 }
 
-fn import_object_components(object: &Object, interner: &mut StringInterner) -> (Components, Vec<Components>) {
+fn import_object_components(
+    object: &Object,
+    interner: &mut StringInterner,
+) -> (Components, Vec<Components>) {
     let mut extra_description_components = Vec::with_capacity(object.extra_descriptions.len());
 
-    let keyword = &object.name;
-    let short_description = &object.short_description;
-
-    let title = format!("Inside {}.", object.short_description);
-    let external = &object.description;
-    let internal = &format!(
-        "You are inside {}. How did you get into it?",
-        object.short_description
-    );
-    let lateral = &object.description; // Not ideal.
-
-    let act_info = interner
-        .act_info(keyword, short_description, Gender::Neutral);
-    let descriptions = interner
-        .descriptions(&title, &internal, external, lateral);
-
-    let components = Components {
-        act_info,
-        descriptions,
-        general: GeneralData {
-            area: object.area.to_string(),
-            sector: None,
-            entity_type: EntityType::Object,
-            equipped: None,
-            command_queue: Vec::new(),
-        },
-        mobile: None,
-        object: Some(crate::components::Object {
-            cost: object.cost,
-            key: if object.item_type == "key" {
-                Some(object.vnum)
-            } else {
-                None
-            },
-        }),
-        door: None,
-        mobprog: None,
-    };
+    let mut main_description = None;
 
     for extra_description in &object.extra_descriptions {
+        // Check if this extra description's keywords coincides with the object's keywords
+        // In that case, just set it as the object's main description
+
+        let keywords_match = extra_description
+            .keyword
+            .split_whitespace()
+            .all(|desc_keyword| {
+                object
+                    .name
+                    .split_whitespace()
+                    .any(|obj_keyword| obj_keyword == desc_keyword)
+            });
+
+        if keywords_match {
+            main_description = Some(&extra_description.description);
+            continue;
+        }
+
         let keyword = &extra_description.keyword;
         let short_description = format!("extra description called '{}'", extra_description.keyword);
 
@@ -431,46 +452,109 @@ fn import_object_components(object: &Object, interner: &mut StringInterner) -> (
             extra_description.keyword
         );
 
-        let act_info = interner
-            .act_info(keyword, &short_description, Gender::Neutral);
-        let descriptions = interner
-            .descriptions(&title, &internal, external, &lateral);
+        let act_info = interner.act_info(keyword, &short_description, Gender::Neutral);
+        let descriptions = interner.descriptions(&title, &internal, external, &lateral);
 
-        extra_description_components.push(
-            Components {
-                act_info,
-                descriptions,
-                general: GeneralData {
-                    area: object.area.to_string(),
-                    sector: None,
-                    entity_type: EntityType::ExtraDescription,
-                    equipped: None,
-                    command_queue: Vec::new(),
-                },
-                mobile: None,
-                object: None,
-                door: None,
-                mobprog: None,
+        extra_description_components.push(Components {
+            act_info,
+            descriptions,
+            general: GeneralData {
+                vnum: Vnum(0),
+                area: object.area.to_string(),
+                sector: None,
+                entity_type: EntityType::ExtraDescription,
+                equipped: None,
+                command_queue: Vec::new(),
+                following: None,
             },
-        );
+            mobile: None,
+            object: None,
+            door: None,
+            mobprog: None,
+        });
     }
+
+    let keyword = &object.name;
+    let short_description = &object.short_description;
+
+    let title = format!("Inside {}.", object.short_description);
+    let lateral = &object.description;
+    let internal = &format!(
+        "You are inside {}. How did you get into it?",
+        object.short_description
+    );
+    let external = if let Some(description) = main_description {
+        description
+    } else {
+        // Not ideal, but there's nothing else available.
+        &object.description
+    };
+
+    let act_info = interner.act_info(keyword, short_description, Gender::Neutral);
+    let descriptions = interner.descriptions(&title, &internal, external, lateral);
+
+    // If you squint hard enough at a lid, it might start to look like a door.
+    let door = if let ObjectFlags::Container {
+        closable,
+        closed,
+        locked,
+    } = object.flags
+    {
+        if closable {
+            Some(Door {
+                closed,
+                locked,
+                key: None,
+            })
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let components = Components {
+        act_info,
+        descriptions,
+        general: GeneralData {
+            vnum: object.vnum,
+            area: object.area.to_string(),
+            sector: None,
+            entity_type: EntityType::Object,
+            equipped: None,
+            command_queue: Vec::new(),
+            following: None,
+        },
+        mobile: None,
+        object: Some(crate::components::Object {
+            cost: object.cost,
+            key: if object.item_type == "key" {
+                Some(object.vnum)
+            } else {
+                None
+            },
+        }),
+        door,
+        mobprog: None,
+    };
 
     (components, extra_description_components)
 }
 
-fn load_object(vnum: usize, container: EntityId, vnum_templates: &VnumTemplates, entity_world: &mut EntityWorld) -> EntityId {
-    let components = vnum_templates.object_components[vnum].as_ref().expect("Object with vnum does not exist");
+fn load_object(
+    vnum: usize,
+    container: EntityId,
+    vnum_templates: &VnumTemplates,
+    entity_world: &mut EntityWorld,
+) -> EntityId {
+    let components = vnum_templates.object_components[vnum]
+        .as_ref()
+        .expect("Object with vnum does not exist");
 
-    let object_id = entity_world.insert_entity(
-        container,
-        components.0.clone(),
-    );
+    let object_id = entity_world.insert_entity(container, components.0.clone());
 
     for extra_description_components in &components.1 {
-        entity_world.insert_entity(
-            object_id,
-            extra_description_components.clone(),
-        );
+        entity_world.insert_entity(object_id, extra_description_components.clone());
     }
 
     object_id

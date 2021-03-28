@@ -77,9 +77,25 @@ pub(super) struct Object {
     pub(super) area: String,
     pub(super) cost: i32,
     pub(super) item_type: String,
+    pub(super) flags: ObjectFlags,
 
     #[serde(default)]
     pub(super) extra_descriptions: Vec<ExtraDescription>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub(super) enum ObjectFlags {
+    /// Not yet implemented for all object types
+    Unknown,
+
+    /// Object is a container
+    Container { closable: bool, closed: bool, locked: bool },
+}
+
+impl Default for ObjectFlags {
+    fn default() -> Self {
+        ObjectFlags::Unknown
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -118,6 +134,12 @@ pub(super) enum ResetCommand {
         o_num: Vnum,
         global_limit: i16,
         location: String,
+    },
+    Put {
+        o_num: Vnum,
+        global_limit: i16,
+        c_num: Vnum,
+        container_limit: i16,
     },
 }
 

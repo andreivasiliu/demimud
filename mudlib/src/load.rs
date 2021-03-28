@@ -2,7 +2,7 @@ use rand::random;
 
 use crate::world::{
     Area, AreaData, Exit, ExtraDescription, Gender, MobProg, MobProgTrigger, Mobile, Object,
-    ResetCommand, Room, Shop, Vnum,
+    ResetCommand, Room, Shop, Vnum, ObjectFlags
 };
 
 use crate::file_parser::FileParser;
@@ -222,7 +222,7 @@ fn load_mobile(parser: &mut FileParser, vnum: usize) -> Mobile {
                     "ACT" => (
                         words.next(),
                         MobProgTrigger::Act {
-                            pattern: words.next().unwrap().to_string(),
+                            pattern: words.collect::<Vec<_>>().join(" ").to_string(),
                         },
                     ),
                     "BRIBE" => (
@@ -309,6 +309,32 @@ fn load_object(parser: &mut FileParser, vnum: usize) -> Object {
             "Cost" => object.cost = value.parse().expect("Invalid cost"),
             "Desc" => object.description = value.to_string(),
             "ItemType" => object.item_type = value.to_string(),
+            "Values" => {
+                if object.item_type == "container" {
+                    let mut values = value.split_whitespace();
+                    let _ignored = values.next();
+                    let flags = values.next().expect("Second value missing");
+
+                    let mut closable = false;
+                    let mut closed = false;
+                    let mut locked = false;
+
+                    for char in flags.chars() {
+                        match char {
+                            'A' => closable = true,
+                            'C' => closed = true,
+                            'D' => locked = true,
+                            _ => (),
+                        };
+                    }
+
+                    object.flags = ObjectFlags::Container {
+                        closable,
+                        closed,
+                        locked,
+                    }
+                }
+            }
             "ExtraDesc" => object.extra_descriptions.push(ExtraDescription {
                 keyword: value2.unwrap().to_string(),
                 description: value.to_string(),
@@ -494,6 +520,22 @@ fn load_resets(parser: &mut FileParser) -> Vec<ResetCommand> {
                     o_num: Vnum(o_num),
                     global_limit,
                     location,
+                })
+            }
+            "P" => {
+                let zero = parser.read_word();
+                let o_num = parser.read_word().parse().unwrap();
+                let global_limit = parser.read_word().parse().unwrap();
+                let c_num = parser.read_word().parse().unwrap();
+                let container_limit = parser.read_word().parse().unwrap();
+
+                assert_eq!(zero, "0");
+
+                resets.push(ResetCommand::Put {
+                    o_num: Vnum(o_num),
+                    global_limit,
+                    c_num: Vnum(c_num),
+                    container_limit,
                 })
             }
             _ => {

@@ -6,10 +6,7 @@ use std::{
 use inflector::Inflector;
 use string_interner::StringInterner;
 
-use crate::{
-    components::{Components, EntityComponentInfo, EntityType, GeneralData, InternComponent},
-    world::Gender,
-};
+use crate::{components::{Components, EntityComponentInfo, EntityType, GeneralData, InternComponent}, world::{Gender, Vnum}};
 
 pub(crate) struct EntityWorld {
     id_generator: IdGenerator,
@@ -110,11 +107,13 @@ impl EntityWorld {
                 act_info: interner.act_info(keyword, short_description, Gender::Neutral),
                 descriptions: interner.descriptions(title, internal, external, lateral),
                 general: GeneralData {
+                    vnum: Vnum(0),
                     area: "world".to_string(),
                     sector: None,
                     entity_type: EntityType::Room,
                     equipped: None,
                     command_queue: Vec::new(),
+                    following: None,
                 },
                 mobile: None,
                 object: None,
@@ -198,11 +197,13 @@ impl EntityWorld {
                 .interner
                 .descriptions(&title, &internal, &external, &lateral),
             general: GeneralData {
+                vnum: Vnum(0),
                 area: "players".to_string(),
                 sector: None,
                 entity_type: EntityType::Player,
                 equipped: None,
                 command_queue: Vec::new(),
+                following: None,
             },
             mobile: None,
             object: None,
@@ -499,6 +500,13 @@ impl<'e> EntityInfo<'e> {
         matches!(
             self.entity.components.general.entity_type,
             EntityType::Player
+        )
+    }
+
+    pub fn is_mobile(&self) -> bool {
+        matches!(
+            self.entity.components.general.entity_type,
+            EntityType::Mobile
         )
     }
 

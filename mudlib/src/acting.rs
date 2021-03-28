@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter, Result, Write};
 
-use crate::entity::EntityInfo;
+use crate::entity::{EntityId, EntityInfo};
 use crate::world::Gender;
 
 pub(crate) struct Players {
@@ -26,9 +26,24 @@ impl Players {
     ) -> ActingStage<'p, 'e> {
         ActingStage::new(self, current, Some(target))
     }
+
+    pub fn info<'p>(&'p mut self, current: &dyn Actor) -> InfoTarget<'p> {
+        for (player_name, player_echo) in self.player_echoes.iter_mut() {
+            player_echo.current_target_type = if current.is_player(player_name) {
+                Some(TargetType::Myself)
+            } else {
+                None
+            };
+        }
+
+        InfoTarget {
+            players: self,
+        }
+    }
 }
 
-pub trait Actor {
+pub(crate) trait Actor {
+    fn entity_id(&self) -> EntityId;
     fn is_player(&self, player_name: &str) -> bool;
     fn colocated_with_player(&self, player_name: &str) -> bool;
 
@@ -49,6 +64,10 @@ pub trait Actor {
 }
 
 impl<'e> Actor for EntityInfo<'e> {
+    fn entity_id(&self) -> EntityId {
+        EntityInfo::entity_id(&self)
+    }
+    
     fn is_player(&self, player_name: &str) -> bool {
         self.is_player_with_name(player_name)
     }
@@ -89,14 +108,24 @@ impl<'e> Actor for EntityInfo<'e> {
     }
 }
 
-pub(crate) struct ActingStage<'p, 'e> {
+pub(crate) struct Acts {
+    pub myself: String,
+    pub target: String,
+    pub others: String,
+
+    pub myself_entity_id: EntityId,
+    pub target_entity_id: Option<EntityId>,
+}
+
+pub(crate) struct ActingStage<'p, 'e, ActsType=()> {
     players: &'p mut Players,
+    acts: ActsType,
 
     current_actor: &'e dyn Actor,
     target_actor: Option<&'e dyn Actor>,
 }
 
-impl<'p, 'e> ActingStage<'p, 'e> {
+impl<'p, 'e> ActingStage<'p, 'e, ()> {
     pub fn new(
         players: &'p mut Players,
         current: &'e dyn Actor,
@@ -116,33 +145,54 @@ impl<'p, 'e> ActingStage<'p, 'e> {
 
         ActingStage {
             players,
+            acts: (),
             current_actor: current,
             target_actor: target,
         }
     }
 
-    #[allow(dead_code)]
-    pub fn myself<'a>(&'a mut self) -> ActTarget<'a, 'p, 'e> {
+    pub fn store_acts(self) -> ActingStage<'p, 'e, Acts> {
+        ActingStage {
+            acts: Acts {
+                myself: String::new(),
+                target: String::new(),
+                others: String::new(),
+                myself_entity_id: self.current_actor.entity_id(),
+                target_entity_id: self.target_actor.map(|a| a.entity_id()),
+            },
+            players: self.players,
+            current_actor: self.current_actor,
+            target_actor: self.target_actor,
+        }
+    }
+}
+
+impl<'p, 'e, ActsType> ActingStage<'p, 'e, ActsType> {
+    pub fn myself<'a>(&'a mut self) -> ActTarget<'a, 'p, 'e, ActsType> {
         ActTarget {
             stage: self,
             target_type: TargetType::Myself,
         }
     }
 
-    #[allow(dead_code)]
-    pub fn target<'a>(&'a mut self) -> ActTarget<'a, 'p, 'e> {
+    pub fn target<'a>(&'a mut self) -> ActTarget<'a, 'p, 'e, ActsType> {
         ActTarget {
             stage: self,
             target_type: TargetType::Target,
         }
     }
 
-    #[allow(dead_code)]
-    pub fn others<'a>(&'a mut self) -> ActTarget<'a, 'p, 'e> {
+    pub fn others<'a>(&'a mut self) -> ActTarget<'a, 'p, 'e, ActsType> {
         ActTarget {
             stage: self,
             target_type: TargetType::Others,
         }
+    }
+}
+
+impl<'p, 'e> ActingStage<'p, 'e, Acts> {
+    pub fn into_acts(self) -> Acts {
+        self.acts
     }
 }
 
@@ -153,20 +203,61 @@ pub(crate) enum TargetType {
     Others,
 }
 
-pub(crate) struct ActTarget<'a, 'p: 'a, 'e: 'a> {
-    stage: &'a mut ActingStage<'p, 'e>,
+pub(crate) struct InfoTarget<'p> {
+    players: &'p mut Players,
+}
+
+impl Write for InfoTarget<'_> {
+    fn write_str(&mut self, message: &str) -> Result {
+        for player_echo in self.players.player_echoes.values_mut() {
+            if player_echo.current_target_type.as_ref() == Some(&TargetType::Myself) {
+                player_echo.echo_buffer.push_str(message);
+            }
+        }
+        Ok(())
+    }
+}
+
+pub(crate) struct ActTarget<'a, 'p: 'a, 'e: 'a, ActType=()> {
+    stage: &'a mut ActingStage<'p, 'e, ActType>,
     target_type: TargetType,
 }
 
-impl Write for ActTarget<'_, '_, '_> {
+impl Write for ActTarget<'_, '_, '_, ()> {
     fn write_str(&mut self, message: &str) -> Result {
+        let message = ReplaceActVariables {
+            current: self.stage.current_actor,
+            target: self.stage.target_actor,
+            message,
+        };
+
         for player_echo in self.stage.players.player_echoes.values_mut() {
             if player_echo.current_target_type.as_ref() == Some(&self.target_type) {
-                let message = ReplaceActVariables {
-                    current: self.stage.current_actor,
-                    target: self.stage.target_actor,
-                    message,
-                };
+                write!(player_echo.echo_buffer, "{}", message)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl Write for ActTarget<'_, '_, '_, Acts> {
+    fn write_str(&mut self, message: &str) -> Result {
+        let message = ReplaceActVariables {
+            current: self.stage.current_actor,
+            target: self.stage.target_actor,
+            message,
+        };
+        
+        let stored_acts = match self.target_type {
+            TargetType::Myself => &mut self.stage.acts.myself,
+            TargetType::Target => &mut self.stage.acts.target,
+            TargetType::Others => &mut self.stage.acts.others,
+        };
+        write!(stored_acts, "{}", message)?;
+
+        for player_echo in self.stage.players.player_echoes.values_mut() {
+            if player_echo.current_target_type.as_ref() == Some(&self.target_type) {
                 write!(player_echo.echo_buffer, "{}", message)?;
             }
         }

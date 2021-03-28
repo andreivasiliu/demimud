@@ -1,13 +1,18 @@
 use string_interner::StringInterner;
 
-use crate::{components::Mobile, import::VnumTemplates, world::{MobProgTrigger, common_direction, long_direction, opposite_direction}};
 use crate::{
     acting::EscapeVariables,
-    acting::Players,
+    acting::{Acts, InfoTarget, Players},
+    colors::recolor,
     echo,
     entity::{EntityId, EntityWorld},
     socials::Socials,
     state::WorldState,
+};
+use crate::{
+    components::Mobile,
+    import::VnumTemplates,
+    world::{common_direction, long_direction, opposite_direction, MobProgTrigger},
 };
 use crate::{entity::Found, mapper::make_map};
 
@@ -77,6 +82,16 @@ fn process_agent_command(agent: &mut EntityAgent, words: &[&str]) -> bool {
         &[ref message @ ..] if message.len() > 0 && message[0].starts_with("'") => {
             agent.do_say(&message.join(" ")[1..]);
         }
+        &["rsay", ref message @ ..] if false => {
+            // Disabled; not needed
+            agent.do_mob_rsay(&message.join(" "));
+        }
+        &["rsay", target, ref message @ ..] if target.starts_with(">") => {
+            agent.do_say_to(&target[1..], &message.join(" "));
+        }
+        &["rsay", ref message @ ..] => {
+            agent.do_say(&message.join(" "));
+        }
         &["recall"] => {
             agent.do_recall(None);
         }
@@ -104,14 +119,32 @@ fn process_agent_command(agent: &mut EntityAgent, words: &[&str]) -> bool {
         &["drop", item, "forcefully"] => {
             agent.do_drop(Some(item), true);
         }
+        &["open", target] => {
+            agent.do_open(target);
+        }
+        &["close", target] => {
+            agent.do_close(target);
+        }
         &["i"] | &["inv"] | &["inventory"] => {
             agent.do_inventory();
         }
         &["list"] | &["wares"] => {
             agent.do_list();
         }
+        &["follow", target] => {
+            agent.do_follow(target);
+        }
+        &["unfollow"] => {
+            agent.do_unfollow();
+        }
         &["emote", ref message @ ..] => {
             agent.do_emote(&message.join(" "));
+        }
+        &[ref message @ ..] if message.len() > 0 && message[0].starts_with(",") => {
+            agent.do_emote(&message.join(" ")[1..]);
+        }
+        &["pmote", target, ref message @ ..] => {
+            agent.do_pmote(target, &message.join(" "));
         }
         &["socials"] | &["emotes"] => {
             agent.do_socials(None);
@@ -161,22 +194,16 @@ pub(crate) fn process_player_command(world_state: &mut WorldState, player: &str,
 
 impl<'e, 'p> EntityAgent<'e, 'p> {
     fn do_unknown(&mut self, cmd_word: &str) {
-        let myself = self.entity_world.entity_info(self.entity_id);
-        let mut act = self.players.act_alone(&myself);
-
         echo!(
-            act.myself(),
+            self.info(),
             "Unrecognized command: {}. Type 'help' for a list of commands.\r\n",
-            EscapeVariables(cmd_word)
+            cmd_word
         );
     }
 
     fn do_help(&mut self) {
-        let myself = self.entity_world.entity_info(self.entity_id);
-        let mut act = self.players.act_alone(&myself);
-
         let help_text = include_str!("../help.txt");
-        echo!(act.myself(), "{}", help_text);
+        echo!(self.info(), "{}", help_text);
     }
 
     fn do_queue(&mut self, ticks: &str, command: String) {
@@ -184,28 +211,26 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         let ticks = match ticks.parse() {
             Ok(ticks) => ticks,
             Err(_) => {
-                let myself = self.entity_world.entity_info(self.entity_id);
-                let mut act = self.players.act_alone(&myself);
-                echo!(act.myself(), "The number of ticks must be a number.\r\n");
+                echo!(self.info(), "The number of ticks must be a number.\r\n");
                 return;
             }
         };
-        myself.components().general.command_queue.push((ticks, command));
+        myself
+            .components()
+            .general
+            .command_queue
+            .push((ticks, command));
 
-        let myself = self.entity_world.entity_info(self.entity_id);
-        let mut act = self.players.act_alone(&myself);
-        echo!(act.myself(), "Command queued to run in {} ticks.\r\n", ticks);
+        echo!(self.info(), "Command queued to run in {} ticks.\r\n", ticks);
     }
 
     fn do_map(&mut self) {
-        let myself = self.entity_world.entity_info(self.entity_id);
         let map = make_map(
             &self.entity_world,
             self.entity_world.room_of(self.entity_id),
         );
 
-        let mut act = self.players.act_alone(&myself);
-        echo!(act.myself(), "{}", map);
+        echo!(self.info(), "{}", map);
     }
 
     fn do_look(&mut self) {
@@ -213,21 +238,20 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         let room_id = self.entity_world.room_of(self.entity_id);
         let room = self.entity_world.entity_info(room_id);
 
-        let mut act = self.players.act_alone(&myself);
-        let mut out = act.myself();
+        let mut info = self.players.info(&myself);
 
         // Title
         echo!(
-            out,
+            info,
             "\x1b[33m{}\x1b[0m\r\n",
             room.component_info().internal_title()
         );
 
         // Description
         let description = room.component_info().internal_description();
-        echo!(out, "{}", description);
+        echo!(info, "{}", description);
         if !description.ends_with("\r") && !description.ends_with("\n") {
-            echo!(out, "\r\n");
+            echo!(info, "\r\n");
         }
 
         // Exits
@@ -235,12 +259,12 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         for exit in room.exits() {
             if first_exit {
                 first_exit = false;
-                echo!(out, "\x1b[32mYou see exits: ");
+                echo!(info, "`gYou see exits: ");
             } else {
-                echo!(out, ", ");
+                echo!(info, ", ");
             }
 
-            echo!(out, "{}", exit.component_info().keyword());
+            echo!(info, "{}", exit.component_info().keyword());
             if let Some(door) = &exit.components().door {
                 let state = if door.closed && door.locked {
                     "locked"
@@ -249,30 +273,38 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
                 } else {
                     "open"
                 };
-                echo!(out, " ({})", state);
+                echo!(info, " ({})", state);
             }
         }
 
         if first_exit {
-            echo!(out, "\x1b[32mYou see no exits.\x1b[0m\r\n");
+            echo!(info, "`gYou see no exits.`^\r\n");
         } else {
-            echo!(out, ".\x1b[0m\r\n");
+            echo!(info, ".`^\r\n");
         }
 
         // Objects
         for object in room.objects() {
+            let container_state = match &object.components().door {
+                Some(door) if door.locked => " (locked)",
+                Some(door) if door.closed => " (closed)",
+                Some(_) => " (opened)",
+                None => "",
+            };
+
             echo!(
-                out,
-                "\x1b[36m{}\x1b[0m\r\n",
-                object.component_info().lateral_description()
+                info,
+                "`c{}{}`^\r\n",
+                recolor("`c", object.component_info().lateral_description()),
+                container_state,
             );
         }
 
         // Mobiles
         for mobile in room.mobiles() {
             echo!(
-                out,
-                "\x1b[35m{}\x1b[0m\r\n",
+                info,
+                "`m{}`^\r\n",
                 mobile.component_info().lateral_description()
             );
         }
@@ -284,8 +316,8 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
             }
 
             echo!(
-                out,
-                "\x1b[1;35m{}\x1b[0m\r\n",
+                info,
+                "`M{}`^\r\n",
                 player.component_info().lateral_description()
             );
         }
@@ -337,19 +369,27 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
         // Contents
         let mut first = true;
+        let mut column = 0;
         for item in target.contained_entities() {
             if item.equipped().is_none() {
                 if first {
                     echo!(act.myself(), "$^$E is holding:\r\n    ");
                     first = false;
+                    column = 4;
                 } else {
                     echo!(act.myself(), ", ");
+                    column += 2;
                 }
-                echo!(
-                    act.myself(),
-                    "{}",
-                    item.component_info().short_description()
-                );
+
+                let short_description = item.component_info().short_description();
+
+                if column > 4 && column + short_description.len() > 78 {
+                    echo!(act.myself(), "\r\n    ");
+                    column = 4;
+                }
+
+                echo!(act.myself(), "{}", short_description);
+                column += short_description.len();
             }
         }
         if !first {
@@ -396,9 +436,8 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
                 other
             }
             Found::Nothing => {
-                let mut act = self.players.act_alone(&myself);
                 echo!(
-                    act.myself(),
+                    self.info(),
                     "You don't see anything named {} in the room.\r\n",
                     target_name
                 );
@@ -406,8 +445,8 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
             }
         };
 
-        let mut act = self.players.act_alone(&target);
-        echo!(act.myself(), "You feel compelled to: {:?}\r\n", words);
+        let mut info = self.players.info(&target);
+        echo!(info, "You feel compelled to: {:?}\r\n", words);
 
         let target_id = target.entity_id();
 
@@ -421,12 +460,55 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
                 act.myself(),
                 "$^$E didn't quite understand your command.\r\n"
             );
+            echo!(
+                act.target(),
+                "You tried to do it, but you didn't quite understand what $e meant.\r\n"
+            );
+            echo!(
+                act.others(),
+                "$^$n tries to do something, but stops with a confused look.\r\n"
+            );
         }
     }
 
     pub fn do_say(&mut self, message: &str) {
         let myself = self.entity_world.entity_info(self.entity_id);
         let mut act = self.players.act_alone(&myself);
+
+        let speech_color = if myself.is_player() {
+            "`M"
+        } else if myself.is_mobile() {
+            "`m"
+        } else {
+            "`c"
+        };
+
+        let message = recolor(speech_color, message);
+
+        let (message, emote_prefix) = if message.starts_with("[") {
+            let end = message.find("]").unwrap_or(message.len());
+            (&message[end + 1..], Some(&message[1..end]))
+        } else {
+            (&message[..], None)
+        };
+
+        let (message, emote_suffix) = if message.ends_with("]") {
+            let start = message
+                .char_indices()
+                .rev()
+                .skip_while(|(_index, c)| *c != '[')
+                .map(|(index, _c)| index)
+                .next()
+                .unwrap_or(0);
+            (
+                &message[..start],
+                Some(&message[start + 1..message.len() - 1]),
+            )
+        } else {
+            (&message[..], None)
+        };
+
+        let message = message.trim();
 
         let first_character = message.chars().next();
 
@@ -442,27 +524,43 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
             let uppercase_character = character.to_uppercase();
 
-            let suffix = if ends_in_punctuation { "" } else { "." };
+            let punctuation = if ends_in_punctuation || emote_suffix.is_some() {
+                ""
+            } else {
+                "."
+            };
 
             echo!(
                 act.myself(),
-                "\x1b[1;35mYou say, '{}{}{}'\x1b[0m\r\n",
+                "{}You say{}{}, '{}{}{}'{}{}{}`^\r\n",
+                speech_color,
+                if emote_prefix.is_some() { " " } else { "" },
+                emote_prefix.unwrap_or(""),
                 uppercase_character,
                 EscapeVariables(remaining_characters),
-                suffix
+                punctuation,
+                if emote_suffix.is_some() { ", " } else { "" },
+                emote_suffix.unwrap_or(""),
+                if emote_suffix.is_some() { "." } else { "" },
             );
 
             echo!(
                 act.others(),
-                "\x1b[1;35m$^$n says, '{}{}{}'\x1b[0m\r\n",
+                "{}$^$n says{}{}, '{}{}{}'{}{}{}`^\r\n",
+                speech_color,
+                if emote_prefix.is_some() { " " } else { "" },
+                emote_prefix.unwrap_or(""),
                 uppercase_character,
                 EscapeVariables(remaining_characters),
-                suffix
+                punctuation,
+                if emote_suffix.is_some() { ", " } else { "" },
+                emote_suffix.unwrap_or(""),
+                if emote_suffix.is_some() { "." } else { "" },
             );
 
-            self.check_triggers(Action::Speech { message })
+            self.check_triggers_others(Action::Speech { message: &message })
         } else {
-            echo!(act.myself(), "You say nothing whatsoever.\r\n");
+            echo!(self.info(), "You say nothing whatsoever.\r\n");
         }
     }
 
@@ -476,24 +574,34 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
                 let mut act = self.players.act_alone(&myself);
 
                 // FIXME implement proper "says to $mself"
-                echo!(act.myself(), "You mutter something to yourself, but nobody hears it.\r\n");
+                echo!(
+                    act.myself(),
+                    "You mutter something to yourself, but nobody hears it.\r\n"
+                );
                 echo!(act.others(), "$^$n mutters something to himself.\r\n");
                 return;
             }
-            Found::Other(other) | Found::WrongOther(other) => {
-                other
-            }
+            Found::Other(other) | Found::WrongOther(other) => other,
             Found::Nothing => {
-                let myself = self.entity_world.entity_info(self.entity_id);
-                let mut act = self.players.act_alone(&myself);
-
-                echo!(act.myself(), "You don't see anyone named like that here.\r\n");
+                echo!(
+                    self.info(),
+                    "You don't see anyone named like that here.\r\n"
+                );
                 return;
             }
         };
 
         let mut act = self.players.act_with(&myself, &target);
 
+        let speech_color = if myself.is_player() {
+            "`M"
+        } else if myself.is_mobile() {
+            "`m"
+        } else {
+            "`c"
+        };
+
+        let message = recolor(speech_color, message);
         let first_character = message.chars().next();
 
         if let Some(character) = first_character {
@@ -512,7 +620,8 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
             echo!(
                 act.myself(),
-                "\x1b[1;35mYou say to $N, '{}{}{}'\x1b[0m\r\n",
+                "{}You say to $N, '{}{}{}'`^\r\n",
+                speech_color,
                 uppercase_character,
                 EscapeVariables(remaining_characters),
                 suffix
@@ -520,7 +629,8 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
             echo!(
                 act.target(),
-                "\x1b[1;35m$^$n says to you, '{}{}{}'\x1b[0m\r\n",
+                "{}$^$n says to you, '{}{}{}'`^\r\n",
+                speech_color,
                 uppercase_character,
                 EscapeVariables(remaining_characters),
                 suffix
@@ -528,60 +638,59 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
             echo!(
                 act.others(),
-                "\x1b[1;35m$^$n says to $N, '{}{}{}'\x1b[0m\r\n",
+                "{}$^$n says to $N, '{}{}{}'`^\r\n",
+                speech_color,
                 uppercase_character,
                 EscapeVariables(remaining_characters),
                 suffix
             );
 
-            self.check_triggers(Action::Speech { message })
+            self.check_triggers_others(Action::Speech { message: &message })
         } else {
-            echo!(act.myself(), "You say nothing whatsoever.\r\n");
+            echo!(self.info(), "You say nothing whatsoever.\r\n");
         }
     }
 
     pub(crate) fn do_recall(&mut self, location: Option<&str>) {
         let myself = self.entity_world.entity_info(self.entity_id);
-        let mut act = self.players.act_alone(&myself);
 
         let location = match location {
             Some(location) => location,
             None => {
-                echo!(act.myself(), "You can recall to:\r\n");
-                echo!(
-                    act.myself(),
-                    " `Wrecall mekali`^ - A Large Plaza in Mekali City\r\n"
-                );
-                echo!(
-                    act.myself(),
-                    " `Wrecall gnomehill`^ - A Large Plaza on Gnome Hill\r\n"
-                );
-                echo!(
-                    act.myself(),
-                    " `Wrecall dzagari`^ - The Blasted Square in Dzagari\r\n"
-                );
-                echo!(
-                    act.myself(),
-                    " `Wrecall mudschool`^ - The Welcome room in MudSchool\r\n"
-                );
+                let mut info = self.info();
+                echo!(info, "You can recall to:\r\n");
+                let places = &[
+                    "`Wrecall mekali`^ - A Large Plaza in Mekali City",
+                    "`Wrecall gnomehill`^ - A Large Plaza on Gnome Hill",
+                    "`Wrecall dzagari`^ - The Blasted Square in Dzagari",
+                    "`Wrecall mudschool`^ - The Welcome room in MudSchool",
+                ];
+                for place in places {
+                    echo!(info, " {}\r\n", place);
+                }
                 return;
             }
         };
 
         if let Some(room_id) = self.entity_world.landmark(location) {
+            let mut act = self.players.act_alone(&myself);
             echo!(
                 act.myself(),
                 "You close your eyes in prayer, and feel your surroundings shift around you.\r\n",
+            );
+            echo!(
+                act.others(),
+                "$n close $s eyes in prayer, and fades out into thin air.\r\n",
             );
 
             self.entity_world.move_entity(self.entity_id, room_id);
             self.do_look();
 
             // A temporary substitute for logging in to make it easier to test
-            self.check_triggers(Action::Login);
+            self.check_triggers_others(Action::Login);
         } else {
             echo!(
-                act.myself(),
+                self.info(),
                 "Unknown location; type `Wrecall`^ to see a list.\r\n"
             );
         }
@@ -593,13 +702,11 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         let myself = self.entity_world.entity_info(self.entity_id);
         let target = myself.find_entity(direction, |entity| entity.is_exit());
 
-        let mut act = self.players.act_alone(&myself);
-
         let exit = match target {
             Found::Myself => {
                 // Not hard to implement, but not worth the effort.
                 echo!(
-                    act.myself(),
+                    self.info(),
                     "That's you! And.. wait, you're a valid exit to go into? But still, no.\r\n"
                 );
                 return true;
@@ -607,7 +714,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
             Found::Other(exit) => exit,
             Found::WrongSelf => {
                 echo!(
-                    act.myself(),
+                    self.info(),
                     "That's you! And you're not an exit to go in.\r\n"
                 );
                 return true;
@@ -619,7 +726,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
             }
             Found::Nothing => {
                 if common_direction(direction) {
-                    echo!(act.myself(), "The way to the {} is blocked.\r\n", direction);
+                    echo!(self.info(), "The way to the {} is blocked.\r\n", direction);
                     return true;
                 } else {
                     return false;
@@ -627,39 +734,48 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
             }
         };
 
-        if let Some(to_room_id) = exit.leads_to() {
-            let exit_id = exit.entity_id();
+        let mut act = self.players.act_alone(&myself);
 
-            echo!(
-                act.myself(),
-                "You walk {}.\r\n",
-                exit.component_info().keyword()
-            );
-            echo!(
-                act.others(),
-                "$^$n leaves {}.\r\n",
-                exit.component_info().keyword()
-            );
-            self.entity_world.move_entity(self.entity_id, to_room_id);
+        let exit_keyword = exit.component_info().keyword();
 
-            // Reacquire everything, the acting stage is now changed.
-            let myself = self.entity_world.entity_info(self.entity_id);
-            let exit = self.entity_world.entity_info(exit_id);
-            let mut act = self.players.act_alone(&myself);
-            echo!(
-                act.others(),
-                "$^$n arrives from the {}.\r\n",
-                opposite_direction(exit.component_info().keyword())
-            );
+        let from_room_id = myself.room().entity_id();
+        let to_room_id = match exit.leads_to() {
+            Some(room_id) => room_id,
+            None => {
+                echo!(act.myself(), "That exit leads into the void!\r\n");
+                echo!(
+                    act.others(),
+                    "$^$n leaves {} but returns with a confused look.\r\n",
+                    exit_keyword
+                );
+                return true;
+            }
+        };
 
-            // Admire new surroundings.
-            self.do_look();
+        let exit_id = exit.entity_id();
 
-            // Others might admire you.
-            self.check_triggers(Action::Greet);
-        } else {
-            echo!(act.myself(), "That exit leads into the void!\r\n")
-        }
+        echo!(act.myself(), "You walk {}.\r\n", exit_keyword);
+        echo!(act.others(), "$^$n leaves {}.\r\n", exit_keyword);
+        self.entity_world.move_entity(self.entity_id, to_room_id);
+
+        // Reacquire everything, the acting stage is now changed.
+        let myself = self.entity_world.entity_info(self.entity_id);
+        let exit = self.entity_world.entity_info(exit_id);
+        let mut act = self.players.act_alone(&myself);
+        echo!(
+            act.others(),
+            "$^$n arrives from the {}.\r\n",
+            opposite_direction(exit.component_info().keyword())
+        );
+
+        // Admire new surroundings.
+        self.do_look();
+
+        // Allow followers to admire new surroundings.
+        self.check_followers(from_room_id, direction, to_room_id);
+
+        // Others might admire you.
+        self.check_triggers_others(Action::Greet);
 
         true
     }
@@ -669,9 +785,9 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         let room = self.entity_world.entity_info(room_id);
 
         let myself = self.entity_world.entity_info(self.entity_id);
-        let mut act = self.players.act_alone(&myself);
+        let mut info = self.players.info(&myself);
 
-        echo!(act.myself(), "You see the following exits:\r\n");
+        echo!(info, "You see the following exits:\r\n");
         for exit in room.exits() {
             let other_room = if let Some(leads_to) = exit.leads_to() {
                 self.entity_world
@@ -683,7 +799,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
             };
 
             echo!(
-                act.myself(),
+                info,
                 "  `W{}`^: {} leading to `y{}`^.\r\n",
                 exit.component_info().keyword(),
                 exit.component_info().short_description(),
@@ -694,61 +810,100 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
     pub fn do_emote(&mut self, message: &str) {
         let myself = self.entity_world.entity_info(self.entity_id);
-        let mut act = self.players.act_alone(&myself);
+        let mut act = self.players.act_alone(&myself).store_acts();
 
-        echo!(act.myself(), "You emote: $^$n {}\r\n", message);
-        echo!(act.others(), "$^$n {}\r\n", message);
+        if message.contains('*') {
+            // Allow players to suppress the space after the name (e.g. "*'s eyes shine")
+            // or to put the name in a different place.
+            echo!(
+                act.myself(),
+                "You emote: $^{}\r\n",
+                message.replace("*", "$n")
+            );
+            echo!(act.others(), "$^{}\r\n", message.replace("*", "$n"));
+        } else {
+            echo!(act.myself(), "You emote: $^$n {}\r\n", message);
+            echo!(act.others(), "$^$n {}\r\n", message);
+        }
+
+        let acts = act.into_acts();
+        self.check_act_triggers(acts);
+    }
+
+    pub fn do_pmote(&mut self, target: &str, message: &str) {
+        let myself = self.entity_world.entity_info(self.entity_id);
+
+        let target = myself.find_entity(target, |e| {
+            !e.is_extra_description() && e.entity_id() != myself.entity_id()
+        });
+
+        let target = match target {
+            Found::Myself | Found::WrongSelf => {
+                echo!(self.info(), "You can't pmote yourself, use an untargetted '`Wemote`^' instead.\r\n");
+                return;
+            }
+            Found::Nothing | Found::WrongOther(_) => {
+                echo!(self.info(), "You don't see anything like that here.\r\n");
+                return;
+            }
+            Found::Other(other) => other,
+        };
+
+        let mut act = self.players.act_with(&myself, &target).store_acts();
+        let target_name = target.component_info().short_description();
+        let you_or_target = format!("[you/{}]", target_name);
+
+        if message.contains('*') {
+            // Allow players to suppress the space after the name (e.g. "*'s eyes shine")
+            // or to put the name in a different place.
+            let message = message.replace("*", "$n");
+            echo!(
+                act.myself(),
+                "You emote: $^{}\r\n",
+                message.replace("@", &you_or_target)
+            );
+
+            echo!(act.target(), "$^{}\r\n", message.replace("@", "you"));
+            echo!(act.others(), "$^{}\r\n", message.replace("@", target_name));
+        } else {
+            let you_or_target = format!("[you/{}]", target_name);
+            echo!(act.myself(), "You emote: $^$n {}\r\n", message.replace("@", &you_or_target));
+            echo!(act.target(), "$^$n {}\r\n", message.replace("@", "you"));
+            echo!(act.others(), "$^$n {}\r\n", message.replace("@", target_name));
+        }
+
+        let acts = act.into_acts();
+        self.check_act_triggers(acts);
     }
 
     pub fn do_socials(&mut self, social: Option<&str>) {
         let myself = self.entity_world.entity_info(self.entity_id);
-        let mut act = self.players.act_alone(&myself);
-        let mut me = act.myself();
+        let mut info = self.players.info(&myself);
 
         if let Some(social) = social {
             if let Some(social) = self.socials.get(social) {
                 echo!(
-                    me,
+                    info,
                     "The {} emote shows the following messages:\r\n",
                     social.name
                 );
-                echo!(me, "Untargetted:\r\n");
-                echo!(
-                    me,
-                    "  \"{}\"\r\n",
-                    EscapeVariables(&social.untargetted_self)
-                );
-                echo!(
-                    me,
-                    "  \"{}\"\r\n",
-                    EscapeVariables(&social.untargetted_others)
-                );
+                echo!(info, "Untargetted:\r\n");
+                echo!(info, "  \"{}\"\r\n", &social.untargetted_self);
+                echo!(info, "  \"{}\"\r\n", &social.untargetted_others);
 
-                echo!(me, "Targetted:\r\n");
-                echo!(me, "  \"{}\"\r\n", EscapeVariables(&social.targetted_self));
-                echo!(
-                    me,
-                    "  \"{}\"\r\n",
-                    EscapeVariables(&social.targetted_target)
-                );
-                echo!(
-                    me,
-                    "  \"{}\"\r\n",
-                    EscapeVariables(&social.targetted_others)
-                );
+                echo!(info, "Targetted:\r\n");
+                echo!(info, "  \"{}\"\r\n", &social.targetted_self);
+                echo!(info, "  \"{}\"\r\n", &social.targetted_target);
+                echo!(info, "  \"{}\"\r\n", &social.targetted_others);
 
-                echo!(me, "Self-targetted:\r\n");
-                echo!(me, "  \"{}\"\r\n", EscapeVariables(&social.reflected_self));
-                echo!(
-                    me,
-                    "  \"{}\"\r\n",
-                    EscapeVariables(&social.reflected_others)
-                );
+                echo!(info, "Self-targetted:\r\n");
+                echo!(info, "  \"{}\"\r\n", &social.reflected_self);
+                echo!(info, "  \"{}\"\r\n", &social.reflected_others);
             } else {
-                echo!(me, "There is no social with that name.\r\n");
+                echo!(info, "There is no social with that name.\r\n");
             }
         } else {
-            echo!(me, "The following emotes are available:\r\n");
+            echo!(info, "The following emotes are available:\r\n");
 
             let mut column = 0;
             let mut first = true;
@@ -757,20 +912,20 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
                 if first {
                     first = false;
                 } else {
-                    echo!(me, ", ");
+                    echo!(info, ", ");
                     column += 2;
 
                     if column > 70 {
-                        echo!(me, "\r\n");
+                        echo!(info, "\r\n");
                         column = 0;
                     }
                 }
 
-                echo!(me, "`W{}`^", social);
+                echo!(info, "`W{}`^", social);
                 column += social.len();
             }
 
-            echo!(me, ".\r\n");
+            echo!(info, ".\r\n");
         }
     }
 
@@ -815,9 +970,8 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
                     );
                 }
                 Found::Nothing => {
-                    let mut act = self.players.act_alone(&myself);
                     echo!(
-                        act.myself(),
+                        self.info(),
                         "You don't see anything named like that here.\r\n"
                     );
                 }
@@ -839,8 +993,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         let object_name = match object_name {
             Some(name) => name,
             None => {
-                let mut act = self.players.act_alone(&myself);
-                echo!(act.myself(), "Get what?\r\n");
+                echo!(self.info(), "Get what?\r\n");
                 return;
             }
         };
@@ -853,21 +1006,21 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
         match target {
             Found::Myself | Found::WrongSelf => {
-                let mut act = self.players.act_alone(&myself);
                 echo!(
-                    act.myself(),
+                    self.info(),
                     "You try to get a hold of yourself. You think you succeeded.\r\n"
                 );
                 return;
             }
             Found::Other(other) => {
-                let mut act = self.players.act_with(&myself, &other);
+                let mut act = self.players.act_with(&myself, &other).store_acts();
                 echo!(act.myself(), "You pick up $N.\r\n");
                 echo!(
                     act.target(),
                     "$^$n picks you up. You're now in $s inventory!\r\n"
                 );
-                echo!(act.others(), "$^$n picks up $N.\r\n");
+                echo!(act.others(), "$^$n gets $N.\r\n");
+                let acts1 = act.into_acts();
 
                 let myself_id = myself.entity_id();
                 let other_id = other.entity_id();
@@ -875,16 +1028,21 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
                 self.entity_world.move_entity(other_id, myself_id);
 
                 let other = self.entity_world.entity_info(other_id);
-                let mut act = self.players.act_alone(&other);
+                let mut act = self.players.act_alone(&other).store_acts();
                 echo!(
                     act.others(),
                     "$^$n is tossed into here, and lands with a thud.\r\n"
                 );
+                let acts2 = act.into_acts();
+
+                // Check triggers only have everyone saw the message, so that
+                // the events are seen in order.
+                self.check_act_triggers(acts1);
+                self.check_act_triggers(acts2);
             }
             Found::Nothing | Found::WrongOther(_) => {
-                let mut act = self.players.act_alone(&myself);
                 echo!(
-                    act.myself(),
+                    self.info(),
                     "You don't see any objects named like that in the room.\r\n"
                 );
                 return;
@@ -931,9 +1089,8 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
                 }
             }
             Found::Nothing | Found::WrongOther(_) => {
-                let mut act = self.players.act_alone(&myself);
                 echo!(
-                    act.myself(),
+                    self.info(),
                     "You aren't holding anything named like that.\r\n"
                 );
                 return;
@@ -941,65 +1098,187 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         }
     }
 
+    pub fn do_open(&mut self, target: &str) {
+        let myself = self.entity_world.entity_info(self.entity_id);
+        let target = myself.find_entity(target, |entity| {
+            // Prefer closed doors
+            if let Some(ref door) = entity.components().door {
+                door.closed
+            } else {
+                false
+            }
+        });
+
+        let target = match target {
+            Found::Myself | Found::WrongSelf => {
+                // Not necessarily impossible, but doesn't seem useful.
+                echo!(
+                    self.info(),
+                    "You can't seem to open yourself, you'll need some assistance.\r\n"
+                );
+                return;
+            }
+            Found::Nothing => {
+                echo!(
+                    self.info(),
+                    "You don't see anything here by that name to open.\r\n"
+                );
+                return;
+            }
+            Found::Other(other) | Found::WrongOther(other) => other,
+        };
+
+        let target_id = target.entity_id();
+        let mut target = self.entity_world.entity_info_mut(target_id);
+
+        let door = match &mut target.components().door {
+            Some(door) if door.locked => Err("appears to be locked"),
+            Some(door) if !door.closed => Err("is already open"),
+            Some(door) => Ok(door),
+            None => Err("is not something you can open"),
+        };
+
+        let door = match door {
+            Ok(door) => door,
+            Err(err) => {
+                let myself = self.entity_world.entity_info(self.entity_id);
+                let target = self.entity_world.entity_info(target_id);
+                let mut act = self.players.act_with(&myself, &target);
+                echo!(act.myself(), "But $N {}!\r\n", err);
+                return;
+            }
+        };
+
+        door.closed = false;
+
+        let myself = self.entity_world.entity_info(self.entity_id);
+        let target = self.entity_world.entity_info(target_id);
+        let mut act = self.players.act_with(&myself, &target).store_acts();
+        echo!(act.myself(), "You open $N.\r\n");
+        echo!(act.target(), "$^$n opens you.\r\n");
+        echo!(act.others(), "$^$n opens $N.\r\n");
+
+        let acts = act.into_acts();
+        self.check_act_triggers(acts);
+    }
+
+    pub fn do_close(&mut self, _target: &str) {}
+
     pub fn do_inventory(&mut self) {
         let myself = self.entity_world.entity_info(self.entity_id);
 
-        let mut act = self.players.act_alone(&myself);
-        echo!(act.myself(), "You are holding:\r\n    ");
+        let mut info = self.players.info(&myself);
+        echo!(info, "You are holding:\r\n    ");
         let mut first = true;
         let mut column = 4;
         for item in myself.contained_entities() {
             if first {
                 first = false;
             } else {
-                echo!(act.myself(), ", ");
+                echo!(info, ", ");
                 column += 2;
             }
 
             if column > 72 {
-                echo!(act.myself(), "\r\n    ");
+                echo!(info, "\r\n    ");
                 column = 4;
             }
 
-            echo!(
-                act.myself(),
-                "{}",
-                EscapeVariables(item.component_info().short_description())
-            );
-            column += item.component_info().short_description().len();
+            let short_description = item.component_info().short_description();
+            echo!(info, "{}", short_description);
+            column += short_description.len();
         }
-        echo!(act.myself(), "\r\n");
+        echo!(info, "\r\n");
     }
 
     pub fn do_list(&mut self) {
         let myself = self.entity_world.entity_info(self.entity_id);
         let room = myself.room();
 
-        let shopkeeper = room.contained_entities().filter_map(|entity| {
-            match &entity.components().mobile {
-                Some(Mobile { shopkeeper: Some(shopkeeper), .. }) => Some((entity, shopkeeper)),
+        let shopkeeper = room
+            .contained_entities()
+            .filter_map(|entity| match &entity.components().mobile {
+                Some(Mobile {
+                    shopkeeper: Some(shopkeeper),
+                    ..
+                }) => Some((entity, shopkeeper)),
                 Some(_) | None => None,
-            }
-        }).next();
+            })
+            .next();
 
         if let Some((entity, shop_info)) = shopkeeper {
             let mut act = self.players.act_with(&myself, &entity);
-            echo!(act.target(), "$^$n asks you about your wares, and you show $m what you have.\r\n");
+            echo!(
+                act.target(),
+                "$^$n asks you about your wares, and you show $m what you have.\r\n"
+            );
             echo!(act.others(), "$^$n asks $N about $S wares.\r\n");
 
             echo!(act.myself(), "$^$N shows you $S wares:\r\n");
+
+            let mut info = self.players.info(&myself);
             for item in entity.objects() {
                 if let Some(object_info) = &item.components().object {
                     let price = object_info.cost * shop_info.profit_buy as i32 / 100;
-                    echo!(act.myself(), "  {}: {} silver coins\r\n", item.component_info().short_description(), price);
+                    echo!(
+                        info,
+                        "  {}: `W{}`^ silver coins\r\n",
+                        item.component_info().short_description(),
+                        price
+                    );
                 } else {
-                    echo!(act.myself(), "  {}: priceless\r\n", item.component_info().short_description());
+                    echo!(
+                        info,
+                        "  {}: priceless\r\n",
+                        item.component_info().short_description()
+                    );
                 }
             }
         } else {
-            let mut act = self.players.act_alone(&myself);
-            echo!(act.myself(), "You don't see any shopkeepers here.\r\n");
+            echo!(self.info(), "You don't see any shopkeepers here.\r\n");
         }
+    }
+
+    pub fn do_follow(&mut self, target: &str) {
+        let myself = self.entity_world.entity_info(self.entity_id);
+
+        let target = myself.find_entity(target, |entity| {
+            !entity.is_extra_description() && entity.entity_id() != self.entity_id
+        });
+
+        let target = match target {
+            Found::Myself | Found::WrongSelf => {
+                self.do_unfollow();
+                return;
+            }
+            Found::Nothing | Found::WrongOther(_) => {
+                echo!(
+                    self.info(),
+                    "You don't see anyone like that to follow here.\r\n"
+                );
+                return;
+            }
+            Found::Other(other) => other,
+        };
+
+        let mut act = self.players.act_with(&myself, &target);
+        echo!(act.myself(), "You start following $N.\r\n");
+        echo!(act.target(), "$^$n starts following you.\r\n");
+        echo!(act.others(), "$^$n starts following $N.\r\n");
+
+        let main_keyword = target.main_keyword().to_string();
+        let mut myself = self.entity_world.entity_info_mut(self.entity_id);
+        myself.components().general.following = Some(main_keyword);
+    }
+
+    pub fn do_unfollow(&mut self) {
+        let myself = self.entity_world.entity_info(self.entity_id);
+        let mut act = self.players.act_alone(&myself);
+        echo!(act.myself(), "You stop following anyone.\r\n");
+        echo!(act.others(), "$^$n stops following anyone.\r\n");
+
+        let mut myself = self.entity_world.entity_info_mut(self.entity_id);
+        myself.components().general.following = None;
     }
 }
 
@@ -1020,10 +1299,21 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
                 self.do_mob_mload(m_vnum);
             }
             &["call", p_vnum, target] => {
-                self.do_call(p_vnum, target);
+                self.do_mob_call(p_vnum, target);
+            }
+            &["remember", target] => {
+                self.do_mob_remember(target);
+            }
+            &["rsay", ref message @ ..] => {
+                self.do_mob_rsay(&message.join(" "));
             }
             &["force", target, ref command @ ..] => {
+                // No difference from normal command
                 self.do_force(target, command);
+            }
+            &["mpfollow", target] => {
+                // No difference from normal command
+                self.do_follow(target);
             }
             &[cmd_word, ..] => {
                 self.do_unknown(cmd_word);
@@ -1039,8 +1329,11 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         let to_room_vnum: usize = match to_room.parse() {
             Ok(vnum) => vnum,
             Err(_) => {
-                let mut act = self.players.act_alone(&myself);
-                echo!(act.myself(), "Transfer room target '{}' is not a valid vnum.\r\n", to_room);
+                echo!(
+                    self.info(),
+                    "Transfer room target '{}' is not a valid vnum.\r\n",
+                    to_room
+                );
                 return;
             }
         };
@@ -1050,13 +1343,16 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
             .vnum_to_entity
             .get(to_room_vnum)
             .and_then(|permanent_id| *permanent_id)
-            .and_then(|permanent_id| self.entity_world.old_entity( &permanent_id));
+            .and_then(|permanent_id| self.entity_world.old_entity(&permanent_id));
 
         let room_id = match room {
             Some(entity) => entity.entity_id(),
             None => {
-                let mut act = self.players.act_alone(&myself);
-                echo!(act.myself(), "Transfer room target '{}' was destroyed.\r\n", to_room);
+                echo!(
+                    self.info(),
+                    "Transfer room target '{}' was destroyed.\r\n",
+                    to_room
+                );
                 return;
             }
         };
@@ -1067,8 +1363,10 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
             Found::Myself | Found::WrongSelf => myself.entity_id(),
             Found::Other(other) | Found::WrongOther(other) => other.entity_id(),
             Found::Nothing => {
-                let mut act = self.players.act_alone(&myself);
-                echo!(act.myself(), "I don't see anyone here by that name to transfer.\r\n");
+                echo!(
+                    self.info(),
+                    "I don't see anyone here by that name to transfer.\r\n"
+                );
                 return;
             }
         };
@@ -1083,7 +1381,10 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
         let target = self.entity_world.entity_info(target_id);
         let mut act = self.players.act_alone(&target);
-        echo!(act.others(), "$^$n appears into the room out of thin air.\r\n");
+        echo!(
+            act.others(),
+            "$^$n appears into the room out of thin air.\r\n"
+        );
     }
 
     pub fn do_mob_dequeue_all(&mut self) {
@@ -1093,10 +1394,11 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         let commands = queue.len();
         queue.clear();
 
-        let myself = self.entity_world.entity_info(self.entity_id);
-        let mut act = self.players.act_alone(&myself);
-
-        echo!(act.myself(), "Cleared {} commands from the queue.\r\n", commands);
+        echo!(
+            self.info(),
+            "Cleared {} commands from the queue.\r\n",
+            commands
+        );
     }
 
     pub fn do_mob_at(&mut self, at_room: &str, commands: &[&str]) {
@@ -1104,8 +1406,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         let at_room_vnum: usize = match at_room.parse() {
             Ok(vnum) => vnum,
             Err(_) => {
-                let mut act = self.players.act_alone(&myself);
-                echo!(act.myself(), "Room '{}' is not a valid vnum.\r\n", at_room);
+                echo!(self.info(), "Room '{}' is not a valid vnum.\r\n", at_room);
                 return;
             }
         };
@@ -1115,13 +1416,12 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
             .vnum_to_entity
             .get(at_room_vnum)
             .and_then(|permanent_id| *permanent_id)
-            .and_then(|permanent_id| self.entity_world.old_entity( &permanent_id));
+            .and_then(|permanent_id| self.entity_world.old_entity(&permanent_id));
 
         let room_id = match room {
             Some(entity) => entity.entity_id(),
             None => {
-                let mut act = self.players.act_alone(&myself);
-                echo!(act.myself(), "Room '{}' was destroyed.\r\n", at_room);
+                echo!(self.info(), "Room '{}' was destroyed.\r\n", at_room);
                 return;
             }
         };
@@ -1130,7 +1430,8 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
         self.entity_world.move_entity(self.entity_id, room_id);
         process_agent_command(self, commands);
-        self.entity_world.move_entity(self.entity_id, original_room_id);
+        self.entity_world
+            .move_entity(self.entity_id, original_room_id);
     }
 
     pub fn do_mob_mload(&mut self, m_vnum: &str) {
@@ -1138,8 +1439,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         let m_vnum: usize = match m_vnum.parse() {
             Ok(vnum) => vnum,
             Err(_) => {
-                let mut act = self.players.act_alone(&myself);
-                echo!(act.myself(), "Vnum '{}' is not a valid number.\r\n", m_vnum);
+                echo!(self.info(), "Vnum '{}' is not a valid number.\r\n", m_vnum);
                 return;
             }
         };
@@ -1153,15 +1453,20 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         let (mobile_components, mobprogs) = match mobile_components {
             Some(components) => components,
             None => {
-                let mut act = self.players.act_alone(&myself);
-                echo!(act.myself(), "Mobile template with vnum '{}' does not exist.\r\n", m_vnum);
+                echo!(
+                    self.info(),
+                    "Mobile template with vnum '{}' does not exist.\r\n",
+                    m_vnum
+                );
                 return;
             }
         };
 
         let room_id = myself.room().entity_id();
 
-        let mobile_id = self.entity_world.insert_entity(room_id, mobile_components.clone());
+        let mobile_id = self
+            .entity_world
+            .insert_entity(room_id, mobile_components.clone());
         for mobprog in mobprogs {
             self.entity_world.insert_entity(mobile_id, mobprog.clone());
         }
@@ -1169,19 +1474,26 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         let myself = self.entity_world.entity_info(self.entity_id);
         let mobile = self.entity_world.entity_info(mobile_id);
         let mut act = self.players.act_with(&mobile, &myself);
-        echo!(act.target(), "Spawned $N from mobile template with vnum '{}' .\r\n", m_vnum);
-        echo!(act.myself(), "You have been spawned by $n into existence. Welcome!\r\n");
-        echo!(act.others(), "$^$n creates $N from thin air and drops $M into the room.\r\n");
+        echo!(
+            act.target(),
+            "Spawned $N from mobile template with vnum '{}' .\r\n",
+            m_vnum
+        );
+        echo!(
+            act.myself(),
+            "You have been spawned by $n into existence. Welcome!\r\n"
+        );
+        echo!(
+            act.others(),
+            "$^$n creates $N from thin air and drops $M into the room.\r\n"
+        );
     }
 
-    pub fn do_call(&mut self, p_vnum: &str, target: &str) {
-        let myself = self.entity_world.entity_info(self.entity_id);
-
+    pub fn do_mob_call(&mut self, p_vnum: &str, target: &str) {
         let p_vnum: usize = match p_vnum.parse() {
             Ok(vnum) => vnum,
             Err(_) => {
-                let mut act = self.players.act_alone(&myself);
-                echo!(act.myself(), "Vnum '{}' is not a valid number.\r\n", p_vnum);
+                echo!(self.info(), "Vnum '{}' is not a valid number.\r\n", p_vnum);
                 return;
             }
         };
@@ -1195,33 +1507,162 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         let code = match mobprog {
             Some(code) => code.clone(),
             None => {
-                let mut act = self.players.act_alone(&myself);
-                echo!(act.myself(), "MobProg with vnum '{}' does not exist.\r\n", p_vnum);
+                echo!(
+                    self.info(),
+                    "MobProg with vnum '{}' does not exist.\r\n",
+                    p_vnum
+                );
                 return;
             }
         };
 
         self.run_mobprog(code, target.to_string());
     }
+
+    pub fn do_mob_remember(&mut self, target: &str) {
+        let mut myself = self.entity_world.entity_info_mut(self.entity_id);
+
+        let remembered = if let Some(mobile) = &mut myself.components().mobile {
+            mobile.remember = Some(target.to_string());
+
+            true
+        } else {
+            false
+        };
+
+        if remembered {
+            echo!(self.info(), "Target remembered.\r\n");
+        } else {
+            echo!(
+                self.info(),
+                "But you are not a mobile! You can't remember things.\r\n"
+            );
+        }
+    }
+
+    pub fn do_mob_rsay(&mut self, message: &str) {
+        let myself = self.entity_world.entity_info(self.entity_id);
+
+        let target = if let Some(mobile) = &myself.components().mobile {
+            if let Some(target) = &mobile.remember {
+                Ok(target)
+            } else {
+                Err("But you don't have anyone remembered!")
+            }
+        } else {
+            Err("But you are not a mobile! You can't remember things.")
+        };
+
+        let target = match target {
+            Ok(target) => target.clone(),
+            Err(err) => {
+                echo!(self.info(), "{}\r\n", err);
+                return;
+            }
+        };
+
+        self.do_say_to(&target, message);
+    }
 }
 
 pub(crate) enum Action<'a> {
+    /// A word or phrase is said
     Speech { message: &'a str },
+
+    /// Someone enters your room
     Greet,
+
+    /// You entered a new room
+    Entry,
+
+    /// You spawned or recalled here
     Login,
 }
 
 impl<'e, 'p> EntityAgent<'e, 'p> {
-    fn check_triggers(&mut self, action: Action<'_>) {
+    fn info(&mut self) -> InfoTarget<'_> {
         let myself = self.entity_world.entity_info(self.entity_id);
-        let room = myself.room();
+        self.players.info(&myself)
+    }
+
+    fn check_followers(&mut self, from_room_id: EntityId, direction: &str, to_room_id: EntityId) {
+        let mut followers = Vec::new();
+        let myself = self.entity_world.entity_info(self.entity_id);
+        let room = self.entity_world.entity_info(from_room_id);
+
+        for follower in room.contained_entities() {
+            let main_keyword = myself.main_keyword();
+            if let Some(following) = &follower.components().general.following {
+                if following == main_keyword {
+                    followers.push(follower.entity_id());
+
+                    let mut act = self.players.act_with(&follower, &myself);
+                    echo!(act.myself(), "You follow $N to the {}.\r\n", direction);
+                    echo!(act.others(), "$^$n follows $N to the {}.\r\n", direction);
+                }
+            }
+        }
+
+        for follower_id in followers {
+            let myself = self.entity_world.entity_info(self.entity_id);
+            let follower = self.entity_world.entity_info(follower_id);
+            let mut act = self.players.act_with(&follower, &myself);
+            echo!(
+                act.target(),
+                "$^$n follows you in from the {}.\r\n",
+                opposite_direction(direction)
+            );
+            echo!(
+                act.others(),
+                "$^$n follows $N in from the {}.\r\n",
+                opposite_direction(direction)
+            );
+
+            self.entity_world.move_entity(follower_id, to_room_id);
+            let mut agent = self.switch_agent(follower_id);
+            agent.do_look();
+            agent.check_triggers_self(Action::Entry);
+        }
+    }
+
+    fn check_triggers_self(&mut self, action: Action<'_>) {
+        let mut triggered = Vec::new();
+        let myself = self.entity_world.entity_info(self.entity_id);
+        for item in myself.contained_entities() {
+            if let Some(mobprog) = &item.components().mobprog {
+                match (&action, &mobprog.trigger) {
+                    (Action::Entry, MobProgTrigger::Entry { chance }) => {
+                        if random_percent(*chance) {
+                            triggered.push(mobprog.code.clone());
+                        }
+                    }
+                    _ => (),
+                }
+            }
+        }
+
+        if triggered.is_empty() {
+            return;
+        }
+
+        let self_keyword = myself.main_keyword().to_string();
+
+        for code in triggered {
+            // TODO: Maybe running with this target isn't how it's supposed
+            // to work?
+            self.run_mobprog(code, self_keyword.clone());
+        }
+    }
+
+    fn check_triggers_others(&mut self, action: Action<'_>) {
+        let myself = self.entity_world.entity_info(self.entity_id);
         let mut triggered = Vec::new();
 
         if !myself.is_player() {
             return;
         }
 
-        for entity in room.contained_entities() {
+        for entity in myself.room().contained_entities() {
             for item in entity.contained_entities() {
                 if let Some(mobprog) = &item.components().mobprog {
                     match (&action, &mobprog.trigger) {
@@ -1231,6 +1672,11 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
                             }
                         }
                         (Action::Greet, MobProgTrigger::Greet { chance }) => {
+                            if random_percent(*chance) {
+                                triggered.push((entity.entity_id(), mobprog.code.clone()));
+                            }
+                        }
+                        (Action::Entry, MobProgTrigger::Entry { chance }) => {
                             if random_percent(*chance) {
                                 triggered.push((entity.entity_id(), mobprog.code.clone()));
                             }
@@ -1256,11 +1702,110 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         }
     }
 
+    pub fn check_act_triggers(&mut self, acts: Acts) {
+        // Note: `&mut self` might no longer be acts.myself_entity_id.
+        let myself = self.entity_world.entity_info(acts.myself_entity_id);
+        let mut triggered = Vec::new();
+
+        for entity in myself.room().contained_entities() {
+            for mobprog in entity.contained_entities() {
+                let mobprog = match &mobprog.components().mobprog {
+                    Some(mobprog) => mobprog,
+                    None => continue,
+                };
+
+                let lines = if entity.entity_id() == acts.myself_entity_id {
+                    acts.myself.lines()
+                } else if Some(entity.entity_id()) == acts.target_entity_id {
+                    acts.target.lines()
+                } else {
+                    acts.others.lines()
+                };
+
+                for line in lines {
+                    if let MobProgTrigger::Act { pattern } = &mobprog.trigger {
+                        println!("Checking '{}' against '{}'", pattern, line);
+                        if line.contains(pattern) {
+                            println!("Matched!");
+                            triggered.push((entity.entity_id(), mobprog.code.clone()));
+                        }
+                    }
+                }
+            }
+        }
+        if triggered.is_empty() {
+            return;
+        }
+
+        let self_keyword = myself.main_keyword().to_string();
+
+        for (entity_id, code) in triggered {
+            let mut agent = self.switch_agent(entity_id);
+            agent.run_mobprog(code, self_keyword.clone());
+        }
+    }
+
     pub fn run_mobprog(&mut self, code: String, target: String) {
-        for command in code.lines().map(|c| c.replace("$n", &target)) {
+        let mut accept_commands = true;
+
+        for command in code.lines() {
+            let command = command.replace("$n", &target);
+
+            let myself = self.entity_world.entity_info(self.entity_id);
+            let remembered = myself
+                .components()
+                .mobile
+                .as_ref()
+                .and_then(|mobile| mobile.remember.as_deref())
+                .unwrap_or("nobody");
+
+            let command = command.replace("$q", remembered);
+
+            println!("Processing: {}", command);
+
+            if command.trim_start().starts_with("**") {
+                continue;
+            }
+
             let words: Vec<_> = command.split_whitespace().collect();
-            println!("Processing: {:?}", words);
-            process_agent_command(self, &words);
+
+            let remembered = myself
+                .components()
+                .mobile
+                .as_ref()
+                .and_then(|mobile| mobile.remember.as_deref())
+                .unwrap_or("nobody");
+
+            match &words[..] {
+                &["if", ref condition @ ..] => {
+                    accept_commands = match condition {
+                        &["room", target, "==", vnum] => {
+                            assert!(["$i", "$I"].contains(&target), "Don't know how to handle other targets");
+
+                            let vnum: usize = vnum.parse().expect("Invalid vnum in mobprog");
+
+                            let myself = self.entity_world.entity_info(self.entity_id);
+                            let room = myself.room();
+
+                            vnum == room.components().general.vnum.0
+                        }
+                        &["istarget", target] => {
+                            target == remembered
+                        }
+                        &["!istarget", target] => {
+                            target != remembered
+                        }
+                        _ => false,
+                    };
+                }
+                &["else"] => accept_commands = !accept_commands,
+                &["endif"] => accept_commands = true,
+                &["end"] if accept_commands => break,
+                command if accept_commands => {
+                    process_agent_command(self, command);
+                }
+                _ => println!("Ignored."),
+            };
         }
     }
 }
