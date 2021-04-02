@@ -50,7 +50,7 @@ impl RoomMap {
         for (_, row_offset, column_offset, dir_name) in EXITS {
             if let Some(exit) = room
                 .exits()
-                .find(|e| e.component_info().keyword() == *dir_name)
+                .find(|e| e.main_keyword() == *dir_name)
             {
                 let other_room = match exit.leads_to() {
                     Some(other_room) => entity_world.entity_info(other_room),
@@ -161,7 +161,7 @@ pub(crate) fn make_map(entity_world: &EntityWorld, location: EntityId) -> String
             for (dir, row_offset, column_offset, dir_name) in EXITS {
                 if let Some(exit_entity) = room
                     .exits()
-                    .find(|e| e.component_info().keyword() == *dir_name)
+                    .find(|e| e.main_keyword() == *dir_name)
                 {
                     let exit_position = map_position as isize
                         + (*row_offset as isize * map_columns as isize)

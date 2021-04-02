@@ -6,7 +6,10 @@ use std::{
 use inflector::Inflector;
 use string_interner::StringInterner;
 
-use crate::{components::{Components, EntityComponentInfo, EntityType, GeneralData, InternComponent}, world::{Gender, Vnum}};
+use crate::{
+    components::{Components, EntityComponentInfo, EntityType, GeneralData, InternComponent},
+    world::{Gender, Vnum},
+};
 
 pub(crate) struct EntityWorld {
     id_generator: IdGenerator,
@@ -119,6 +122,7 @@ impl EntityWorld {
                 object: None,
                 door: None,
                 mobprog: None,
+                silver: None,
             },
             raw_entity_id: id_generator.next(),
             contents: Vec::new(),
@@ -209,6 +213,7 @@ impl EntityWorld {
             object: None,
             door: None,
             mobprog: None,
+            silver: None,
         }
     }
 
@@ -308,6 +313,17 @@ impl EntityWorld {
         EntityInfoMut { entity, era }
     }
 
+    // Not nice, but it'll go away once I switch to string-cache's atoms
+    pub fn entity_info_mut_with_interner(&mut self, entity_id: EntityId) -> (EntityInfoMut<'_>, &'_ mut StringInterner) {
+        let era = self.era;
+        let raw_entity_id = self.raw_entity_id(entity_id);
+        let entity = self.entities
+            .get_mut(&raw_entity_id)
+            .expect("Entities should not be deleted within an era");
+
+        (EntityInfoMut { entity, era }, &mut self.interner)
+    }
+
     pub fn all_entities(&self) -> impl Iterator<Item = EntityInfo<'_>> {
         self.entities.values().map(move |entity| EntityInfo {
             entity,
@@ -317,10 +333,9 @@ impl EntityWorld {
 
     pub fn all_entities_mut(&mut self) -> impl Iterator<Item = EntityInfoMut<'_>> {
         let era = self.era;
-        self.entities.values_mut().map(move |entity| EntityInfoMut {
-            entity,
-            era,
-        })
+        self.entities
+            .values_mut()
+            .map(move |entity| EntityInfoMut { entity, era })
     }
 
     pub fn add_landmark(&mut self, landmark: &'static str, entity_id: EntityId) {
@@ -422,6 +437,10 @@ impl<'e> EntityInfoMut<'e> {
     pub fn components(&'e mut self) -> &'e mut Components {
         &mut self.entity.components
     }
+
+    pub fn set_short_description(&mut self, interner: &mut StringInterner, short_description: &str) {
+        interner.set_short_description(&mut self.entity.components.act_info, short_description);
+    }
 }
 
 impl<'e> EntityInfo<'e> {
@@ -440,7 +459,11 @@ impl<'e> EntityInfo<'e> {
     }
 
     pub fn main_keyword(&self) -> &str {
-        self.component_info().keyword().split_whitespace().last().unwrap_or("unknown")
+        self.component_info()
+            .keyword()
+            .split_whitespace()
+            .last()
+            .unwrap_or("unknown")
     }
 
     pub fn components(&self) -> &'e Components {
@@ -452,13 +475,10 @@ impl<'e> EntityInfo<'e> {
     }
 
     pub fn equipped(&self) -> Option<&str> {
-        None
-        // FIXME
-        // self.entity
-        //     .data
-        //     .equipped
-        //     .as_ref()
-        //     .map(|location| self.resolve(location))
+        self.components()
+            .general
+            .equipped
+            .as_deref()
     }
 
     pub fn leads_to(&self) -> Option<EntityId> {
@@ -473,7 +493,9 @@ impl<'e> EntityInfo<'e> {
 
     pub fn room(&self) -> EntityInfo<'e> {
         EntityInfo {
-            entity: self.entity_world.entity(self.entity_world.room_of(self.entity_id())) ,
+            entity: self
+                .entity_world
+                .entity(self.entity_world.room_of(self.entity_id())),
             entity_world: self.entity_world,
         }
     }
@@ -622,5 +644,24 @@ impl<'e> EntityInfo<'e> {
             Some(entity) => Found::WrongOther(entity),
             None => Found::Nothing,
         }
+    }
+}
+
+impl PartialEq for EntityInfo<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        assert_eq!(
+            self.entity_id().era,
+            other.entity_id().era,
+            "Should not compare entities across generations"
+        );
+        self.entity_id() == other.entity_id()
+    }
+}
+
+impl std::fmt::Display for EntityInfo<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use crate::acting::Actor;
+        let capitalized = false;
+        self.short_description(f, capitalized)
     }
 }

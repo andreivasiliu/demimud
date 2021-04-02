@@ -72,7 +72,7 @@ and gender) and to be described (internal/external descriptions) are universal.
 Currently only tested on Windows; there might be issues with CRLF line endings
 on other systems.
 
-To build it, `git clone` this repoistory and run `cargo build --release`. You
+To build it, `git clone` this repository and run `cargo build --release`. You
 will need the Rust compiler (see https://rustup.rs) and any of its dependencies
 (e.g. MSVC build tools on Windows).
 

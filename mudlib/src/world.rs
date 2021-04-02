@@ -27,6 +27,7 @@ pub(super) struct Exit {
     pub(super) name: String,
     pub(super) vnum: Vnum,
     pub(super) description: Option<String>,
+    pub(super) extra_keywords: Option<String>,
 
     pub(super) has_door: bool,
     pub(super) is_closed: bool,
@@ -171,11 +172,17 @@ pub(super) enum MobProgTrigger {
     Act { pattern: String },
     Exit { direction: String },
     Bribe { amount: usize },
-    Give { item_vnum: Vnum },
+    Give { item_vnum: VnumOrKeyword },
     Kill { chance: u8 },
     Death { chance: u8 },
     Hour { hour: u8 },
     LoginRoom,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub(super) enum VnumOrKeyword {
+    Vnum(Vnum),
+    Keyword(String),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -307,7 +314,7 @@ pub(crate) fn opposite_direction(direction: &str) -> &str {
     match direction {
         "north" => "south",
         "east" => "west",
-        "south" => "south",
+        "south" => "north",
         "west" => "east",
         "up" => "down",
         "down" => "up",

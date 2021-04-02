@@ -2,7 +2,7 @@ use rand::random;
 
 use crate::world::{
     Area, AreaData, Exit, ExtraDescription, Gender, MobProg, MobProgTrigger, Mobile, Object,
-    ResetCommand, Room, Shop, Vnum, ObjectFlags
+    ResetCommand, Room, Shop, Vnum, ObjectFlags, VnumOrKeyword
 };
 
 use crate::file_parser::FileParser;
@@ -207,17 +207,19 @@ fn load_mobile(parser: &mut FileParser, vnum: usize) -> Mobile {
                     ),
                     "GIVE" => {
                         let mopprog_vnum = words.next();
-                        let item = words.next().unwrap().parse();
-                        if let Ok(vnum) = item {
-                            (
-                                mopprog_vnum,
-                                MobProgTrigger::Give {
-                                    item_vnum: Vnum(vnum),
-                                },
-                            )
+                        let item = words.next().unwrap();
+                        let item_vnum = if let Ok(vnum) = item.parse() {
+                            VnumOrKeyword::Vnum(Vnum(vnum))
                         } else {
-                            continue;
-                        }
+                            VnumOrKeyword::Keyword(item.to_string())
+                        };
+
+                        (
+                            mopprog_vnum,
+                            MobProgTrigger::Give {
+                                item_vnum,
+                            },
+                        )
                     }
                     "ACT" => (
                         words.next(),
@@ -420,8 +422,6 @@ fn load_room(parser: &mut FileParser, vnum: usize) -> Room {
                         _ => (),
                     }
                 }
-
-                exit.description = Some(value.to_string());
             }
             "EKeyvnum" => {
                 use std::convert::TryInto;
@@ -432,6 +432,10 @@ fn load_room(parser: &mut FileParser, vnum: usize) -> Room {
                 if let Ok(vnum) = vnum.try_into() {
                     exit.key = Some(Vnum(vnum));
                 }
+            }
+            "EKeywords" => {
+                let exit = room.exits.last_mut().unwrap();
+                exit.extra_keywords = Some(value.to_string());
             }
             "ExtraDesc" => room.extra_descriptions.push(ExtraDescription {
                 keyword: value2.unwrap().to_string(),

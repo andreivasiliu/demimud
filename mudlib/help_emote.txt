@@ -1,0 +1,21 @@
+`m# Emoting`^
+
+Did you actually expect me to write this help file? Because I did.
+
+Besides the pre-defined '`Wsocials`^', '`Wemote <text>`^' and '`Wpmote <target> <text>`^'
+can be used to echo custom messages to those in the same room. Other people
+will see your name followed by the text, and a period if you didn't put one.
+Example: '`Wemote waves his arms wildly.`^'
+
+Both support '`W*`^' that switches the place your name is at. It can also be used
+to remove the space between your name and the rest of the text.
+Example: '`Wemote *'s eyes shine brightly.`^'
+
+'`Wpmote <target>`^' furthermore supports '`W@`^' that will be replaced with "you"
+for the target, or the target's name for everyone else.
+Example: '`Wpmote gnome * glances at @.`^'
+
+The '`Wemote`^' command also has an alias, '`W,`^' (a comma), which can be used
+without a space after it.
+Example: '`W,nods`^'
+

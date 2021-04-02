@@ -1,5 +1,7 @@
 use crate::{acting::{PlayerEcho, Players}, commands::update_entity_world, echo, entity::EntityWorld, import::{VnumTemplates, import_from_world}, socials::Socials, world::World};
-
+use crate::{
+    commands::EntityAgent,
+};
 pub(super) struct WorldState {
     pub(crate) socials: Socials,
     pub(crate) entity_world: EntityWorld,
@@ -40,6 +42,8 @@ impl WorldState {
             .landmark("gnomehill")
             .expect("Starting location should exist");
         self.entity_world.move_entity(player_id, starting_location);
+        let mut agent = EntityAgent::new(self, player_id);
+        agent.add_silver(200, player_id);
 
         self.players
             .player_echoes

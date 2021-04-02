@@ -16,6 +16,7 @@ pub(crate) struct Components {
     pub object: Option<Object>,
     pub door: Option<Door>,
     pub mobprog: Option<MobProg>,
+    pub silver: Option<Silver>,
 }
 
 #[derive(Clone)]
@@ -51,6 +52,8 @@ pub(crate) struct Mobile {
 pub(crate) struct Object {
     pub cost: i32,
     pub key: Option<Vnum>,
+    pub container: bool,
+    pub food: bool,
 }
 
 #[derive(Clone)]
@@ -64,6 +67,11 @@ pub(crate) struct Door {
 pub(crate) struct MobProg {
     pub trigger: MobProgTrigger,
     pub code: String,
+}
+
+#[derive(Clone)]
+pub(crate) struct Silver {
+    pub amount: usize,
 }
 
 #[derive(Clone)]
@@ -95,6 +103,7 @@ pub(crate) struct EntityComponentInfo<'i, 'c> {
 
 pub(crate) trait InternComponent {
     fn act_info(&mut self, keyword: &str, short_description: &str, gender: Gender) -> ActInfo;
+    fn set_short_description(&mut self, act_info: &mut ActInfo, short_description: &str);
     fn descriptions(
         &mut self,
         title: &str,
@@ -114,6 +123,13 @@ impl InternComponent for StringInterner {
             short_description: intern(short_description),
             gender: gender,
         }
+    }
+
+    fn set_short_description(&mut self, act_info: &mut ActInfo, short_description: &str) {
+        // Note: old value is forever lost; this kinda leaks
+        act_info.short_description = IntStr { symbol:
+            self.get_or_intern(short_description)
+        };
     }
 
     fn descriptions(

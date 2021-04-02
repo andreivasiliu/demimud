@@ -53,13 +53,14 @@ pub(crate) fn import_from_world(entity_world: &mut EntityWorld, world: &World) -
                 object: None,
                 door: None,
                 mobprog: None,
+                silver: None,
             };
 
             entity_world.insert_entity(entity_world.world_entity_id(), room_components)
         };
 
         for exit in &room.exits {
-            let keyword = &exit.name;
+            let mut keyword = exit.name.to_string();
             let short_description = format!("the {} exit", exit.name);
 
             let title = format!("Inside an {} exit.", exit.name);
@@ -74,6 +75,7 @@ pub(crate) fn import_from_world(entity_world: &mut EntityWorld, world: &World) -
             let lateral = format!("An exit leading {} is here.", exit.name);
 
             let door = if exit.has_door {
+                keyword = String::from("door ") + &keyword;
                 Some(Door {
                     closed: exit.is_closed,
                     locked: exit.is_locked,
@@ -83,9 +85,13 @@ pub(crate) fn import_from_world(entity_world: &mut EntityWorld, world: &World) -
                 None
             };
 
+            if let Some(extra_keywords) = &exit.extra_keywords {
+                keyword = extra_keywords.clone() + " " + &keyword;
+            }
+
             let exit_components = Components {
                 act_info: entity_world.interner.act_info(
-                    keyword,
+                    &keyword,
                     &short_description,
                     Gender::Neutral,
                 ),
@@ -105,6 +111,7 @@ pub(crate) fn import_from_world(entity_world: &mut EntityWorld, world: &World) -
                 object: None,
                 door,
                 mobprog: None,
+                silver: None,
             };
             let exit_id = entity_world.insert_entity(room_id, exit_components);
 
@@ -146,6 +153,7 @@ pub(crate) fn import_from_world(entity_world: &mut EntityWorld, world: &World) -
                 object: None,
                 door: None,
                 mobprog: None,
+                silver: None,
             };
 
             entity_world.insert_entity(room_id, extra_description_components);
@@ -165,6 +173,8 @@ pub(crate) fn import_from_world(entity_world: &mut EntityWorld, world: &World) -
         ("mekali", 3000),
         ("dzagari", 27003),
         ("mudschool", 7371),
+        ("void", 1),
+        ("limbo", 2),
     ];
 
     for (landmark, vnum) in landmarks {
@@ -352,6 +362,7 @@ fn import_mobile_components(
         object: None,
         door: None,
         mobprog: None,
+        silver: None,
     };
 
     for (mobprog_trigger, vnum) in &mobile.mobprog_triggers {
@@ -406,6 +417,7 @@ fn import_mobile_components(
                 trigger: mobprog_trigger.clone(),
                 code: mobprog.code.clone(),
             }),
+            silver: None,
         });
     }
 
@@ -471,6 +483,7 @@ fn import_object_components(
             object: None,
             door: None,
             mobprog: None,
+            silver: None,
         });
     }
 
@@ -533,9 +546,12 @@ fn import_object_components(
             } else {
                 None
             },
+            container: object.item_type == "container",
+            food: object.item_type == "food",
         }),
         door,
         mobprog: None,
+        silver: None,
     };
 
     (components, extra_description_components)
