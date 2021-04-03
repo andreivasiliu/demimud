@@ -1,3 +1,17 @@
+//! Main game object, glues everything together.
+//!
+//! The `WorldState` objects holds all information about the game, except for
+//! connection/socket information.
+//!
+//! It has two important fields:
+//! * The EntityWorld, which contains all things in the game
+//! * The Players struct, which is used to store output to players
+//!
+//! Splitting the two makes it possible to hold multiple read-only references
+//! into the entity world, while mutating Players to echo things to players.
+//!
+//! On a crash or restart, this entire state is thrown away and reloaded.
+
 use crate::{acting::{PlayerEcho, Players}, commands::update_entity_world, echo, entity::EntityWorld, import::{VnumTemplates, import_from_world}, socials::Socials, world::World};
 use crate::{
     commands::EntityAgent,

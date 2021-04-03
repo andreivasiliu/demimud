@@ -1,3 +1,8 @@
+//! Turn codes like "`w" into "\e[37m".
+//!
+//! This allows writing strings like "Hello `Rworld`^", where "world" will be
+//! colored bright red.
+
 use std::{borrow::Cow, collections::HashMap};
 
 use lazy_static::lazy_static;

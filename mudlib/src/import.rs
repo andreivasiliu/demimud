@@ -1,4 +1,8 @@
-//! Convert a DoW world to EntityWorld entities
+//! Convert a DoW world to EntityWorld entities.
+//!
+//! Using types from `crate::world` that were loaded with `crate::load` from
+//! area files, this module converts them into Entity objects and inserts them
+//! into an EntityWorld defined in `crate::entity`.
 
 use std::collections::HashMap;
 

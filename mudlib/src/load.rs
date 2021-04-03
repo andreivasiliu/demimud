@@ -1,3 +1,9 @@
+//! Dawn of Time area loader.
+//!
+//! This module uses the basic primitives in `crate::file_parser` to read area
+//! files, parse rooms/mobiles/objects from them, and convert them into the
+//! plain object types from `crate::world`.
+
 use rand::random;
 
 use crate::world::{

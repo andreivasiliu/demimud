@@ -10,7 +10,7 @@ use commands::process_player_command;
 use state::WorldState;
 
 mod acting; // Process and output things like "$n flexes $s muscles."
-mod colors; // Turn "`w" to "\e[37m"
+mod colors; // Turn codes like "`w" into "\e[37m".
 mod commands; // do_say, do_look, do_get, etc
 mod components; // Types of game data (mob, obj, etc) attached to entities
 mod entity; // Every object in the world and relation between objects
@@ -21,6 +21,7 @@ mod mapper; // Map generator
 mod socials; // Load socials from socials.txt
 mod state; // Main game object, glues everything together
 mod world; // Read-only representation of a set of Dawn of Time areas
+mod find_entities; // Primitives to help with matching and filtering entities
 
 #[derive(Serialize, Deserialize)]
 struct ConnectionState {

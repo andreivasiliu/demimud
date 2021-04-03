@@ -52,6 +52,7 @@ struct RawEntityId {
     id: NonZeroUsize,
 }
 
+#[derive(Clone)]
 pub(crate) struct EntityInfo<'e> {
     entity: &'e Entity,
     entity_world: &'e EntityWorld,
@@ -314,10 +315,14 @@ impl EntityWorld {
     }
 
     // Not nice, but it'll go away once I switch to string-cache's atoms
-    pub fn entity_info_mut_with_interner(&mut self, entity_id: EntityId) -> (EntityInfoMut<'_>, &'_ mut StringInterner) {
+    pub fn entity_info_mut_with_interner(
+        &mut self,
+        entity_id: EntityId,
+    ) -> (EntityInfoMut<'_>, &'_ mut StringInterner) {
         let era = self.era;
         let raw_entity_id = self.raw_entity_id(entity_id);
-        let entity = self.entities
+        let entity = self
+            .entities
             .get_mut(&raw_entity_id)
             .expect("Entities should not be deleted within an era");
 
@@ -438,7 +443,11 @@ impl<'e> EntityInfoMut<'e> {
         &mut self.entity.components
     }
 
-    pub fn set_short_description(&mut self, interner: &mut StringInterner, short_description: &str) {
+    pub fn set_short_description(
+        &mut self,
+        interner: &mut StringInterner,
+        short_description: &str,
+    ) {
         interner.set_short_description(&mut self.entity.components.act_info, short_description);
     }
 }
@@ -475,10 +484,7 @@ impl<'e> EntityInfo<'e> {
     }
 
     pub fn equipped(&self) -> Option<&str> {
-        self.components()
-            .general
-            .equipped
-            .as_deref()
+        self.components().general.equipped.as_deref()
     }
 
     pub fn leads_to(&self) -> Option<EntityId> {
@@ -597,6 +603,32 @@ impl<'e> EntityInfo<'e> {
 
     pub fn extra_descriptions(&self) -> impl Iterator<Item = EntityInfo<'e>> {
         self.iter_by_type(EntityType::ExtraDescription)
+    }
+
+    pub fn visible_entities<'a>(&'a self, keyword: &'a str) -> impl Iterator<Item = EntityInfo<'a>> + 'a {
+        let room = self.room();
+
+        let is_myself = ["me", "self", "myself"].contains(&keyword);
+        let myself_id = self.entity_id();
+
+        let inventory_and_room = self
+            .contained_entities_with_descriptions()
+            .chain(room.contained_entities_with_descriptions())
+            .filter(move |entity| {
+                if is_myself && entity.entity_id() == myself_id {
+                    true
+                } else {
+                    entity
+                        .component_info()
+                        .keyword()
+                        .split_whitespace()
+                        .any(|word| word.eq_ignore_ascii_case(keyword))
+                }
+            });
+
+        let found_entities = inventory_and_room;
+
+        found_entities
     }
 
     pub fn find_entity<F>(&self, keyword: &str, matcher: F) -> Found<'e>

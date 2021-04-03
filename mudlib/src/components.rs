@@ -1,6 +1,6 @@
 use string_interner::StringInterner;
 
-use crate::world::{Gender, MobProgTrigger, Shop, Vnum};
+use crate::{entity::EntityInfo, world::{Gender, MobProgTrigger, Shop, Vnum}};
 
 #[derive(Clone)]
 pub(crate) struct IntStr {
@@ -96,6 +96,29 @@ pub(crate) struct Descriptions {
     /// Example: "An object is in the room here."
     lateral: IntStr,
 }
+
+pub(crate) trait ComponentFromEntity {
+    fn component_from_entity<'e>(entity: &EntityInfo<'e>) -> Option<&'e Self>;
+}
+
+impl ComponentFromEntity for Object {
+    fn component_from_entity<'e>(entity: &EntityInfo<'e>) -> Option<&'e Self> {
+        entity.components().object.as_ref()
+    }
+}
+
+impl ComponentFromEntity for Door {
+    fn component_from_entity<'e>(entity: &EntityInfo<'e>) -> Option<&'e Self> {
+        entity.components().door.as_ref()
+    }
+}
+
+impl ComponentFromEntity for Mobile {
+    fn component_from_entity<'e>(entity: &EntityInfo<'e>) -> Option<&'e Self> {
+        entity.components().mobile.as_ref()
+    }
+}
+
 pub(crate) struct EntityComponentInfo<'i, 'c> {
     interner: &'i StringInterner,
     components: &'c Components,

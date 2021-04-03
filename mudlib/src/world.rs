@@ -1,3 +1,11 @@
+//! Read-only representation of a set of Dawn of Time areas.
+//!
+//! The types here mostly correspond to how they are serialized in the area
+//! files.
+//!
+//! Not everything is loaded from area files yet; a lot of properties are
+//! missing because they were not yet needed.
+
 use std::{fs::File, path::Path};
 
 use serde::{Deserialize, Serialize};

@@ -1,3 +1,34 @@
+//! Map generator.
+//!
+//! This generates a map dynamically based on the current room, by recursively
+//! placing neighbors on the map until hitting the map's edges.
+//!
+//! A generated map looks somewhat like this:
+//!
+//! ```norust
+//! /-+---+---+---+---+---+---+---+---+---+---+---+---+-\
+//!                       +   |   +       |
+//!                      [ ]-[ ]-[ ]     [ ]         [ ]
+//!                           |           |           |
+//!                          [ ] [ ] [ ] [ ]     [ ]-[ ]-
+//!                           |   |   |     \   /     |
+//!                  [ ] [ ]-[ ] [ ]-[ ]-[ ] [ ]     [ ]
+//!                   +       |       +     /   \
+//!      [ ]     [ ]+[ ]+[ ] [ ]-[ ]-[ ]-[ ]     [ ]+[ ]
+//!       |           |       |           |       |
+//!  [ ]-[ ]-[ ]-[ ]-[ ]-[ ]-[*]-[ ]     [ ]-[ ] [ ]
+//!       |           |       |         /
+//!      [ ]     [ ]+[ ]+[ ] [ ] [ ]-[ ] [ ]
+//!                   +         \     |   |
+//!                  [ ]         [ ]-[ ]-[ ]-[ ]+[ ]
+//!                                   |       |
+//!                              [ ]-[ ]-[ ] [ ]-[ ]
+//!                                   |
+//!                              [ ]-[ ]-[ ]
+//!                                   +
+//! \-+---+---+---+---+---+---+---+---+---+---+---+---+-/
+//! ```
+
 use std::ops::{Index, IndexMut};
 
 use crate::entity::{EntityId, EntityWorld};

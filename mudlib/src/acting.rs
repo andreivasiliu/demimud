@@ -1,3 +1,56 @@
+//! Process and output things like "$n flexes $s muscles."
+//!
+//! Provide an acting stage that sends messages to players in the room while
+//! referring to one or two actors using their names and pronouns, as well
+//! as additional format arguments using the println!() format syntax.
+//!
+//! ```ignore
+//! let mut act = self.players.act_with(&myself, &target);
+//! echo!(act.myself(), "You flex your muscles at $N, putting $S to shame.\r\n");
+//! echo!(act.target(), "$^$n flexes $s muscles at you, putting yours to shame.\r\n");
+//! echo!(act.others(), "$^$n flexes $s muscles at $N, putting $S to shame.\r\n");
+//! ```
+//!
+//! A simpler info target is also provided:
+//! ```ignore
+//! echo!(self.info(), "You can't do that with {}.\r\n", object);
+//! ```
+//!
+//! This uses the `Players` struct stored in the `WorldState` from
+//! `crate::state`, which can be mutably borrowed separately from world data,
+//! allowing users to hold multiple references to things while printing
+//! messages to players about them.
+//!
+//! To do this, a stage is created with one of `act_alone()` or `act_with()`,
+//! using objects that implement the Actor trait.
+//!
+//! The stage writes messages to players in the room using zero allocations, in
+//! a way that's similar to Rust's println!(), by using write!() and objects
+//! that implement the Display trait.
+//!
+//! The Actor trait (implemented only for EntityInfo objects for now) allows
+//! a message to refer to an actor by name and the actor's pronouns.
+//!
+//! The stage can then be used to get message targets for `.myself()`,
+//! `.target()`, and other `.others()`, which return objects that implement the
+//! `Write` trait. Writing to these objects will send that message to all
+//! players that match.
+//!
+//! An `echo!()` macro is provided, which is similar to the standard `write!()`
+//! but directly panics on errors instead of returning a Result. The acting
+//! stages send messages into reusable String buffers inside the Players
+//! object, which makes writing mostly infallible.
+//!
+//! The variables are:
+//! * $n - the short description, e.g. "an apple"
+//! * $m - the objective pronoun, e.g. "him"
+//! * $s - the possessive pronoun, e.g. "his"
+//! * $e - the subjective pronoun, e.g. "he"
+//! * $^ - capitalize the first letter of the next variable
+//!
+//! Example: "$^$n licks $mself with $s tongue." would be translated to "An
+//! apple licks itself with its tongue."
+
 use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter, Result, Write};
 

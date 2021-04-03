@@ -4,9 +4,10 @@ use crate::{
     acting::EscapeVariables,
     acting::{Acts, InfoTarget, Players},
     colors::recolor,
-    components::EntityComponentInfo,
+    components::{Door, EntityComponentInfo},
     echo,
     entity::{EntityId, EntityWorld},
+    find_entities::{EntityIterator, MatchError},
     socials::Socials,
     state::WorldState,
     world::VnumOrKeyword,
@@ -1528,130 +1529,84 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
         let object_name = match object_name {
             Some(name) => name,
-            None => {
-                let mut act = self.players.act_alone(&myself);
-                echo!(act.myself(), "Drop what?\r\n");
-                return;
-            }
+            None => return echo!(self.info(), "Drop what?\r\n"),
         };
 
-        let target = myself.find_entity(object_name, |object| object.is_object() || forcefully);
+        let found = myself
+            .contained_entities()
+            .filter_by_keyword(object_name)
+            .filter_or(|e| e.is_object() || forcefully, "$^$N is not an object.")
+            .filter_or(|e| e.room() == myself, "You aren't holding $N.")
+            .filter_or(
+                |e| *e != myself,
+                "You attempt to let go of yourself, but somehow the rest of you just keeps on\r\n\
+                sticking to your hand.",
+            )
+            .find_one_or("You aren't holding anything named like that.");
 
-        let object = match target {
-            Found::Myself | Found::WrongSelf => {
-                let mut act = self.players.act_alone(&myself);
-                echo!(act.myself(), "You attempt to let go of yourself, but somehow the rest of you just keeps on\r\n");
-                echo!(act.myself(), "sticking to your hand.\r\n");
-                return;
-            }
-            Found::Other(other) => other,
-            Found::Nothing | Found::WrongOther(_) => {
-                echo!(
-                    self.info(),
-                    "You aren't holding anything named like that.\r\n"
-                );
-                return;
-            }
+        let object = match found {
+            Ok(object) => object,
+            Err(err) => return self.echo_error(err),
         };
 
         let mut act = self.players.act_with(&myself, &object).store_acts();
-        if self.entity_world.room_of(object.entity_id()) != myself.entity_id() {
-            echo!(act.myself(), "You aren't holding $N.\r\n");
-        } else {
-            echo!(act.myself(), "You drop $N.\r\n");
-            echo!(act.target(), "$^$n drops you out of $m.\r\n");
-            echo!(act.others(), "$^$n drops $N.\r\n");
-            let acts = act.into_acts();
+        echo!(act.myself(), "You drop $N.\r\n");
+        echo!(act.target(), "$^$n drops you out of $m.\r\n");
+        echo!(act.others(), "$^$n drops $N.\r\n");
+        let acts = act.into_acts();
 
-            let mut act = self.players.act_alone(&object);
-            echo!(act.others(), "$^$n is tossed out of here.\r\n");
+        let mut act = self.players.act_alone(&object);
+        echo!(act.others(), "$^$n is tossed out of here.\r\n");
 
-            let object_id = object.entity_id();
-            let room_id = self.entity_world.room_of(myself.entity_id());
-            self.entity_world.move_entity(object_id, room_id);
+        let object_id = object.entity_id();
+        let room_id = self.entity_world.room_of(myself.entity_id());
+        self.entity_world.move_entity(object_id, room_id);
 
-            self.check_act_triggers(acts);
-        }
+        self.check_act_triggers(acts);
     }
 
     pub fn do_give(&mut self, object: &str, target: &str, forcefully: bool) {
         let myself = self.entity_world.entity_info(self.entity_id);
 
-        let object = myself.find_entity(object, |e| {
-            (forcefully || e.is_object()) && e.room() == myself
-        });
+        let found = myself
+            .visible_entities(object)
+            .filter_or(
+                |e| !e.is_extra_description() || forcefully,
+                "That's just a descriptive detail, you can't give that away.",
+            )
+            .filter_or(|e| e.is_object() || forcefully, "$^$N is not an object.")
+            .filter_or(|e| e.room() == myself, "You aren't holding $N.")
+            .filter_or(
+                |e| *e != myself,
+                "But once you do, what will your consciousness be attached to",
+            )
+            .find_one_or("You aren't holding anything named like that.");
 
-        let object = match object {
-            Found::Myself | Found::WrongSelf => {
-                echo!(
-                    self.info(),
-                    "But once you do, what will your consciousness be attached to?\r\n"
-                );
-                return;
-            }
-            Found::Other(other) => other,
-            Found::WrongOther(other) => {
-                if other.room() != myself {
-                    let mut act = self.players.act_with(&myself, &other);
-                    echo!(act.myself(), "But you aren't holding $N!\r\n");
-                    return;
-                } else if other.is_extra_description() {
-                    // These don't have a good short description to refer to.
-                    echo!(
-                        self.info(),
-                        "That's just a descriptive detail, you can't give that away.\r\n"
-                    );
-                    return;
-                } else {
-                    let mut act = self.players.act_with(&myself, &other);
-                    echo!(act.myself(), "But you aren't holding $N!\r\n");
-                    return;
-                }
-            }
-            Found::Nothing => {
-                echo!(
-                    self.info(),
-                    "You aren't holding anything named like that.\r\n"
-                );
-                return;
-            }
+        let object = match found {
+            Ok(object) => object,
+            Err(error) => return self.echo_error(error),
         };
 
-        let target = myself.find_entity(target, |e| {
-            (forcefully || e.is_mobile() || e.is_player()) && *e != myself
-        });
+        let found = myself
+            .visible_entities(target)
+            .filter_or(
+                |e| !e.is_extra_description() || forcefully,
+                "That's just a descriptive detail, you can't give something to that.",
+            )
+            .filter_or(
+                |e| e.is_mobile() || e.is_player() || forcefully,
+                "$^$N doesn't capable of receiving it.",
+            )
+            // FIXME: "throw {} in the air", object
+            .filter_or(
+                |e| *e != myself,
+                "You briefly throw it in the air before catching it again.",
+            )
+            .find_one_or("You don't see anyone here named like that.");
 
-        let target = match target {
-            Found::Myself | Found::WrongSelf => {
-                echo!(
-                    self.players.info(&myself),
-                    "You briefly throw {} in the air before catching it again.\r\n",
-                    object
-                );
-                return;
-            }
-            Found::Other(other) => other,
-            Found::WrongOther(other) => {
-                if other.is_extra_description() {
-                    // These don't have a good short description to refer to.
-                    echo!(
-                        self.info(),
-                        "That's just a descriptive detail, you can't give something to that.\r\n"
-                    );
-                    return;
-                } else {
-                    let mut act = self.players.act_with(&myself, &other);
-                    echo!(act.myself(), "$^$N doesn't capable of receiving it.\r\n");
-                    return;
-                }
-            }
-            Found::Nothing => {
-                echo!(
-                    self.info(),
-                    "You don't see anyone here named like that.\r\n",
-                );
-                return;
-            }
+        let target = match found {
+            Ok(target) => target,
+            Err(error) => return self.echo_error(error),
         };
 
         // Giver and receiver perspectives
@@ -2005,44 +1960,30 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
     pub fn do_unlock(&mut self, target: &str) {
         let myself = self.entity_world.entity_info(self.entity_id);
         let target = long_direction(target);
-        let target = myself.find_entity(target, |entity| {
-            // Prefer unlocked doors
-            if let Some(ref door) = entity.components().door {
-                !door.locked
-            } else {
-                false
-            }
-        });
 
-        let target = match target {
-            Found::Myself | Found::WrongSelf => {
-                // Not necessarily impossible, but doesn't seem useful.
-                echo!(
-                    self.info(),
-                    "You can't seem to unlock yourself, you'll need some assistance.\r\n"
-                );
-                return;
-            }
-            Found::Nothing => {
-                echo!(
-                    self.info(),
-                    "You don't see anything here by that name to unlock.\r\n"
-                );
-                return;
-            }
-            Found::Other(other) | Found::WrongOther(other) => other,
+        let found = myself
+            .visible_entities(target)
+            .filter_or(
+                |e| *e != myself,
+                "You can't seem to unlock yourself, you'll need some assistance",
+            )
+            .with_component_or::<Door>("$^$N is not something you can unlock.")
+            .prefer_component(|_e, door| !door.locked)
+            .find_one_with_component_or("You don't see anything here by that name to unlock.");
+
+        let (target, door) = match found {
+            Ok(object) => object,
+            Err(error) => return self.echo_error(error),
         };
 
-        if let Some(door) = &target.components().door {
-            if let Some(key_vnum) = door.key {
-                let has_key = myself
-                    .contained_entities()
-                    .any(|item| item.components().general.vnum == key_vnum);
+        if let Some(key_vnum) = door.key {
+            let has_key = myself
+                .contained_entities()
+                .any(|item| item.components().general.vnum == key_vnum);
 
-                if !has_key {
-                    echo!(self.info(), "You'll need a key to unlock it!\r\n");
-                    return;
-                }
+            if !has_key {
+                echo!(self.info(), "You'll need a key to unlock it!\r\n");
+                return;
             }
         }
 
@@ -2147,20 +2088,24 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
     pub fn do_list(&mut self) {
         let myself = self.entity_world.entity_info(self.entity_id);
-        let room = myself.room();
 
-        let shopkeeper = room
+        let found = myself
+            .room()
             .contained_entities()
-            .filter_map(|entity| match &entity.components().mobile {
-                Some(Mobile {
-                    shopkeeper: Some(shopkeeper),
-                    ..
-                }) => Some((entity, shopkeeper)),
-                Some(_) | None => None,
-            })
-            .next();
+            .filter_or(
+                |e| *e != myself,
+                "The only shopkeeper here is yourself.\r\n",
+            )
+            .with_component::<Mobile>()
+            .prefer_component(|_e, mobile| mobile.shopkeeper.is_some())
+            .find_one_with_component_or("You don't see anyone here.");
 
-        if let Some((entity, shop_info)) = shopkeeper {
+        let (entity, mobile) = match found {
+            Ok(found) => found,
+            Err(error) => return self.echo_error(error),
+        };
+
+        if let Some(shop_info) = &mobile.shopkeeper {
             let mut act = self.players.act_with(&myself, &entity);
             echo!(
                 act.target(),
@@ -2847,6 +2792,20 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
     fn info(&mut self) -> InfoTarget<'_> {
         let myself = self.entity_world.entity_info(self.entity_id);
         self.players.info(&myself)
+    }
+
+    fn echo_error(&mut self, error: MatchError) {
+        let myself = self.entity_world.entity_info(self.entity_id);
+        match error {
+            MatchError::Message(error) => {
+                echo!(self.info(), "{}\r\n", error);
+            }
+            MatchError::MessageWithActor(error, target_id) => {
+                let target = self.entity_world.entity_info(target_id);
+                let mut act = self.players.act_with(&myself, &target);
+                echo!(act.myself(), "{}\r\n", error);
+            }
+        }
     }
 
     fn check_followers(&mut self, from_room_id: EntityId, direction: &str, to_room_id: EntityId) {
