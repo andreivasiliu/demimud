@@ -4,13 +4,13 @@ use crate::{
     acting::EscapeVariables,
     acting::{Acts, InfoTarget, Players},
     colors::recolor,
-    components::{Door, EntityComponentInfo},
+    components::{Door, EntityComponentInfo, Object},
     echo,
     entity::{EntityId, EntityWorld},
     find_entities::{EntityIterator, MatchError},
     socials::Socials,
     state::WorldState,
-    world::VnumOrKeyword,
+    world::{Shop, VnumOrKeyword},
 };
 use crate::{
     components::{Components, EntityType, GeneralData, InternComponent, Mobile, Silver},
@@ -313,135 +313,43 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
     fn do_buy(&mut self, item_name: &str) {
         let myself = self.entity_world.entity_info(self.entity_id);
-        let room = myself.room();
 
-        let shopkeeper = room
+        let found = myself
+            .room()
             .contained_entities()
-            .filter_map(|entity| match &entity.components().mobile {
-                Some(Mobile {
-                    shopkeeper: Some(shopkeeper),
-                    ..
-                }) => Some((entity, shopkeeper)),
-                Some(_) | None => None,
-            })
-            .next();
+            .with_component::<Shop>()
+            .filter_or(
+                |e| *e != myself,
+                "The only shopkeeper here is yourself.\r\n",
+            )
+            .find_one_with_component_or("You don't see any shopkeepers here.");
 
-        let (entity, shop_info) = match shopkeeper {
-            Some(shopkeeper) => shopkeeper,
-            None => {
-                echo!(self.info(), "You don't see any shopkeepers here.\r\n");
-                return;
-            }
+        let (entity, shop_info) = match found {
+            Ok(found) => found,
+            Err(error) => return self.echo_error(error),
         };
 
         let shopkeeper_id = entity.entity_id();
 
-        let mut found_item = None;
+        let found = entity
+            .objects()
+            .filter_by_keyword(item_name)
+            .with_component::<Object>()
+            .find_one_with_component_or("You don't see anything named like that to buy.");
 
-        for item in entity.objects() {
-            if item
-                .component_info()
-                .keyword()
-                .split_whitespace()
-                .any(|word| word == item_name)
-            {
-                if let Some(object) = &item.components().object {
-                    // FIXME: fix integer types
-                    let cost = object.cost * shop_info.profit_buy as i32 / 100;
-                    found_item = Some((item.entity_id(), cost as usize));
-                    break;
-                }
-            }
-        }
-
-        if let Some((item_id, cost)) = found_item {
-            if self.remove_silver(cost, self.entity_id) {
-                // Clone it so that the shopkeeper can keep selling it
-                let item = self.entity_world.entity_info(item_id);
-                let components = item.components().clone();
-                self.entity_world.insert_entity(self.entity_id, components);
-
-                let myself = self.entity_world.entity_info(self.entity_id);
-                let shopkeeper = self.entity_world.entity_info(shopkeeper_id);
-                let item = self.entity_world.entity_info(item_id);
-                let mut act = self.players.act_with(&myself, &shopkeeper);
-                echo!(
-                    act.myself(),
-                    "You buy {} from $N for {} silver.\r\n",
-                    item,
-                    cost
-                );
-                echo!(
-                    act.target(),
-                    "$^$n buy {} from you for {} silver.\r\n",
-                    item,
-                    cost
-                );
-                echo!(act.others(), "$^$n buys {} from $N.\r\n", item);
-            } else {
-                echo!(
-                    self.info(),
-                    "You don't have the {} silver to pay for it!\r\n",
-                    cost
-                );
-            }
-
-            return;
-        } else {
-            echo!(
-                self.info(),
-                "You don't see anything named like that to buy.\r\n"
-            );
-        }
-    }
-
-    fn do_sell(&mut self, item_name: &str) {
-        let myself = self.entity_world.entity_info(self.entity_id);
-        let room = myself.room();
-
-        let shopkeeper = room
-            .contained_entities()
-            .filter_map(|entity| match &entity.components().mobile {
-                Some(Mobile {
-                    shopkeeper: Some(shopkeeper),
-                    ..
-                }) => Some((entity, shopkeeper)),
-                Some(_) | None => None,
-            })
-            .next();
-
-        let (entity, shop_info) = match shopkeeper {
-            Some(shopkeeper) => shopkeeper,
-            None => {
-                echo!(self.info(), "You don't see any shopkeepers here.\r\n");
-                return;
-            }
+        let (item, object) = match found {
+            Ok(item) => item,
+            Err(error) => return self.echo_error(error),
         };
 
-        let shopkeeper_id = entity.entity_id();
+        let item_id = item.entity_id();
+        let cost = (object.cost * shop_info.profit_buy as i32 / 100) as usize;
 
-        let mut found_item = None;
-
-        for item in myself.objects() {
-            if item
-                .component_info()
-                .keyword()
-                .split_whitespace()
-                .any(|word| word == item_name)
-            {
-                if let Some(object) = &item.components().object {
-                    // FIXME: fix integer types
-                    let cost = object.cost * shop_info.profit_sell as i32 / 100;
-                    found_item = Some((item.entity_id(), cost as usize));
-                    break;
-                }
-            }
-        }
-
-        if let Some((item_id, cost)) = found_item {
-            self.add_silver(cost, self.entity_id);
-            let mut item_agent = self.switch_agent(item_id);
-            item_agent.do_die();
+        if self.remove_silver(cost, self.entity_id) {
+            // Clone it so that the shopkeeper can keep selling it
+            let item = self.entity_world.entity_info(item_id);
+            let components = item.components().clone();
+            self.entity_world.insert_entity(self.entity_id, components);
 
             let myself = self.entity_world.entity_info(self.entity_id);
             let shopkeeper = self.entity_world.entity_info(shopkeeper_id);
@@ -449,84 +357,132 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
             let mut act = self.players.act_with(&myself, &shopkeeper);
             echo!(
                 act.myself(),
-                "You sell {} to $N for {} silver.\r\n",
+                "You buy {} from $N for {} silver.\r\n",
                 item,
                 cost
             );
             echo!(
                 act.target(),
-                "$^$n sells {} to you for {} silver.\r\n",
+                "$^$n buys {} from you for {} silver.\r\n",
                 item,
                 cost
             );
-            echo!(act.others(), "$^$n sells {} to $N.\r\n", item);
+            echo!(act.others(), "$^$n buys {} from $N.\r\n", item);
         } else {
             echo!(
                 self.info(),
-                "You don't own anything named like that to sell.\r\n"
+                "You don't have the {} silver to pay for it!\r\n",
+                cost
             );
         }
+    }
+
+    fn do_sell(&mut self, item_name: &str) {
+        let myself = self.entity_world.entity_info(self.entity_id);
+
+        let found = myself
+            .room()
+            .contained_entities()
+            .with_component::<Shop>()
+            .filter_or(
+                |e| *e != myself,
+                "The only shopkeeper here is yourself.\r\n",
+            )
+            .find_one_with_component_or("You don't see any shopkeepers here.");
+
+        let (entity, shop_info) = match found {
+            Ok(found) => found,
+            Err(error) => return self.echo_error(error),
+        };
+
+        let shopkeeper_id = entity.entity_id();
+
+        let found = myself
+            .objects()
+            .filter_by_keyword(item_name)
+            .with_component_or::<Object>("$^$N is not an object you can sell.")
+            .find_one_with_component_or("You don't own anything named like that to sell.");
+
+        let (item, object) = match found {
+            Ok(found) => found,
+            Err(error) => return self.echo_error(error),
+        };
+
+        // FIXME: fix integer types
+        let cost = (object.cost * shop_info.profit_sell as i32 / 100) as usize;
+        let item_id = item.entity_id();
+
+        self.add_silver(cost, self.entity_id);
+        let mut item_agent = self.switch_agent(item_id);
+        item_agent.do_die();
+
+        let myself = self.entity_world.entity_info(self.entity_id);
+        let shopkeeper = self.entity_world.entity_info(shopkeeper_id);
+        let item = self.entity_world.entity_info(item_id);
+        let mut act = self.players.act_with(&myself, &shopkeeper);
+        echo!(
+            act.myself(),
+            "You sell {} to $N for {} silver.\r\n",
+            item,
+            cost
+        );
+        echo!(
+            act.target(),
+            "$^$n sells {} to you for {} silver.\r\n",
+            item,
+            cost
+        );
+        echo!(act.others(), "$^$n sells {} to $N.\r\n", item);
     }
 
     fn do_eat(&mut self, item_name: &str, forcefully: bool) {
         let myself = self.entity_world.entity_info(self.entity_id);
 
-        let mut found_item = None;
+        let found = myself
+            .contained_entities()
+            .filter_by_keyword(item_name)
+            .filter_or(
+                |food| {
+                    forcefully
+                        || food.components().object.as_ref().map(|object| object.food) == Some(true)
+                },
+                "$^$N does not appear to be edible.",
+            )
+            .find_one_or("You aren't holding any objects named like that.");
 
-        for item in myself.contained_entities() {
-            if (item.is_object() || forcefully)
-                && item
-                    .component_info()
-                    .keyword()
-                    .split_whitespace()
-                    .any(|word| word == item_name)
-            {
-                found_item = Some(item);
-            }
-        }
+        let food = match found {
+            Ok(found) => found,
+            Err(error) => return self.echo_error(error),
+        };
 
-        if let Some(food) = found_item {
-            if forcefully
-                || food.components().object.as_ref().map(|object| object.food) == Some(true)
-            {
-                let mut act = self.players.act_with(&myself, &food);
-                echo!(act.myself(), "You eat $N with gusto.\r\n");
-                echo!(act.target(), "$^$n devours you whole with gusto.\r\n");
-                echo!(act.others(), "$^$n eats $N with gusto.\r\n");
+        let mut act = self.players.act_with(&myself, &food);
+        echo!(act.myself(), "You eat $N with gusto.\r\n");
+        echo!(act.target(), "$^$n devours you whole with gusto.\r\n");
+        echo!(act.others(), "$^$n eats $N with gusto.\r\n");
 
-                let mut act = self.players.act_with(&food, &myself);
-                echo!(act.others(), "$^$n is devoured whole by $N.\r\n");
+        let mut act = self.players.act_with(&food, &myself);
+        echo!(act.others(), "$^$n is devoured whole by $N.\r\n");
 
-                if food.is_mobile() || food.is_player() {
-                    let mut act = self.players.act_with(&myself, &food);
-                    echo!(
-                        act.myself(),
-                        "$^$N struggles for a bit, but you eventually devour $M whole.\r\n"
-                    );
-                    echo!(
-                        act.target(),
-                        "You struggle for a bit, but are eventually devoured whole.\r\n"
-                    );
-                    echo!(
-                        act.others(),
-                        "$^$N struggles for a bit, but is eventually devoured whole.\r\n"
-                    );
-                }
-
-                let food_id = food.entity_id();
-
-                let mut agent = self.switch_agent(food_id);
-                agent.do_die();
-            } else {
-                let mut act = self.players.act_with(&myself, &food);
-                echo!(act.myself(), "$^$N does not appear to be edible.\r\n");
-            }
-        } else {
+        if food.is_mobile() || food.is_player() {
+            let mut act = self.players.act_with(&myself, &food);
             echo!(
-                self.info(),
-                "You aren't holding any objects named like that.\r\n"
+                act.myself(),
+                "$^$N struggles for a bit, but you eventually devour $M whole.\r\n"
+            );
+            echo!(
+                act.target(),
+                "You struggle for a bit, but are eventually devoured whole.\r\n"
+            );
+            echo!(
+                act.others(),
+                "$^$N struggles for a bit, but is eventually devoured whole.\r\n"
             );
         }
+
+        let food_id = food.entity_id();
+
+        let mut agent = self.switch_agent(food_id);
+        agent.do_die();
     }
 
     fn do_queue(&mut self, ticks: &str, command: String) {
@@ -566,7 +522,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         // Title
         echo!(
             info,
-            "\x1b[33m{}\x1b[0m\r\n",
+            "`y{}`^\r\n",
             room.component_info().internal_title()
         );
 
@@ -648,29 +604,15 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
     pub fn do_look_at(&mut self, target: &str) {
         let myself = self.entity_world.entity_info(self.entity_id);
-        let target = myself.find_entity(target, |_entity| true);
 
-        let mut act = self.players.act_alone(&myself);
+        let found = myself
+            .visible_entities(target)
+            .filter_or(|e| *e != myself, "It's you! But you're sadly just a player and players don't have descriptions yet.\r\n")
+            .find_one_or("You don't see anything named like that here.\r\n");
 
-        let target = match target {
-            Found::Myself => {
-                echo!(act.myself(), "It's you! But you're sadly just a player and players don't have descriptions yet.\r\n");
-                return;
-            }
-            Found::Other(entity) => entity,
-            Found::WrongSelf => {
-                unreachable!("The matcher accepts everything");
-            }
-            Found::WrongOther(_) => {
-                unreachable!("The matcher accepts everything");
-            }
-            Found::Nothing => {
-                echo!(
-                    act.myself(),
-                    "You don't see anything named like that here.\r\n"
-                );
-                return;
-            }
+        let target = match found {
+            Ok(target) => target,
+            Err(error) => return self.echo_error(error),
         };
 
         // Description
@@ -681,6 +623,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
             "\r\n"
         };
 
+        let mut act = self.players.act_alone(&myself);
         echo!(act.myself(), "{}{}", description, newline);
 
         let mut act = self.players.act_with(&myself, &target);
@@ -1740,17 +1683,17 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
         // Giver and receiver perspectives
         let mut act = self.players.act_with(&myself, &container).store_acts();
-        echo!(act.myself(), "You give {} to $N.\r\n", object);
-        echo!(act.target(), "$^$n gives {} to you.\r\n", object);
-        echo!(act.others(), "$^$n gives {} to $N.\r\n", object);
+        echo!(act.myself(), "You put {} into $N.\r\n", object);
+        echo!(act.target(), "$^$n puts {} into you.\r\n", object);
+        echo!(act.others(), "$^$n puts {} into $N.\r\n", object);
         let acts = act.into_acts();
 
         // Object and inventory perspectives
         let mut act = self.players.act_with(&object, &myself).store_acts();
-        echo!(act.myself(), "$^$N gives you to {}.\r\n", container);
+        echo!(act.myself(), "$^$N puts you into {}.\r\n", container);
         echo!(
             act.others(),
-            "$^$n is picked up by $N and given to {}.\r\n",
+            "$^$n is picked up by $N and put into {}.\r\n",
             container
         );
 

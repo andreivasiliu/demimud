@@ -119,6 +119,12 @@ impl ComponentFromEntity for Mobile {
     }
 }
 
+impl ComponentFromEntity for Shop {
+    fn component_from_entity<'e>(entity: &EntityInfo<'e>) -> Option<&'e Self> {
+        entity.components().mobile.as_ref().and_then(|mobile| mobile.shopkeeper.as_ref())
+    }
+}
+
 pub(crate) struct EntityComponentInfo<'i, 'c> {
     interner: &'i StringInterner,
     components: &'c Components,
