@@ -19,6 +19,15 @@ It is able to load some basic room and mob descriptions from the Dawn of Time
 and allow exploration, but no interaction with anything except for picking up
 and dropping objects.
 
+## MobProgs
+
+Some basic support for mobprogs is available, enough to mostly support the
+first 13 rooms of Dawn of Time's MudSchool area, which is a great tutorial to
+learn the game's commands.
+
+Mobs are able to react to speech, actions, items being given to them, and
+players entering the room, which brings the world to life a bit.
+
 ## Hot-swapping
 
 Because DemiMUD is a way to learn coding, DemiMUD is specifically built for
@@ -66,6 +75,21 @@ the same time.
 
 The capability to contain and be contained, to be adressed (short description
 and gender) and to be described (internal/external descriptions) are universal.
+
+## CLI version
+
+Besides the normal multi-player net server, the MUD can also be compiled to a
+stand-alone single-player CLI.
+
+Since it's a simple CLI, it also compiles to WASI. You can see a demo of it at
+https://webassembly.sh/ by typing `demimud`, which will run the engine inside
+your browser.
+
+Note that Firefox does not support user input outside of dialog prompts for
+security reasons, you'll have a better experience with other browsers for now.
+
+The Dawn of Time areas are not included in it yet, since properly handling
+their license is difficult (although not impossible).
 
 # Running
 

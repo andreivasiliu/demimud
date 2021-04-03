@@ -6,9 +6,9 @@
 //! Not everything is loaded from area files yet; a lot of properties are
 //! missing because they were not yet needed.
 
-use std::{fs::File, path::Path};
-
 use serde::{Deserialize, Serialize};
+
+use crate::files::Files;
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Clone, Copy, Default)]
 #[serde(transparent)]
@@ -216,10 +216,13 @@ pub(super) struct World {
     pub(super) mobprogs: Vec<MobProg>,
 }
 
-pub(super) fn load_world(path: &Path) -> World {
+pub(super) fn load_world(files: &dyn Files, path: &str) -> World {
     let mut world = World::default();
 
-    let area_names = std::fs::read_to_string(&path.join("arealist.txt")).unwrap();
+    // Note: not using &Path because paths are abstracted in the Files trait,
+    // and may not correspond to the current OS's paths.
+    let arealist_path = format!("{}/arealist.txt", path);
+    let area_names = files.read_file(&arealist_path).unwrap();
 
     let area_names: Vec<&str> = area_names
         .split_whitespace()
@@ -227,7 +230,8 @@ pub(super) fn load_world(path: &Path) -> World {
         .collect();
 
     for file_name in area_names {
-        let contents = lossy_read_to_string(&path.join(file_name)).unwrap();
+        let data_file_name = format!("{}/{}", path, file_name);
+        let contents = files.read_file(&data_file_name).unwrap();
         let area = crate::load::load_area(&contents);
 
         world.areas.push((area.area_data, area.resets));
@@ -274,16 +278,6 @@ pub(super) fn load_world(path: &Path) -> World {
     }
 
     world
-}
-
-/// Like std::fs::read_to_string, but ignores UTF8 errors
-fn lossy_read_to_string(path: &Path) -> Result<String, std::io::Error> {
-    use std::io::Read;
-
-    let mut bytes = Vec::new();
-    let mut file = File::open(path)?;
-    file.read_to_end(&mut bytes)?;
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 pub(crate) fn long_direction(direction: &str) -> &str {

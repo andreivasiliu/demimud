@@ -12,11 +12,18 @@
 //!
 //! On a crash or restart, this entire state is thrown away and reloaded.
 
-use crate::{acting::{PlayerEcho, Players}, commands::update_entity_world, echo, entity::EntityWorld, import::{VnumTemplates, import_from_world}, socials::Socials, world::World};
+use crate::commands::EntityAgent;
 use crate::{
-    commands::EntityAgent,
+    acting::{PlayerEcho, Players},
+    commands::update_entity_world,
+    echo,
+    entity::EntityWorld,
+    import::{import_from_world, VnumTemplates},
+    socials::Socials,
+    world::World,
+    Files,
 };
-pub(super) struct WorldState {
+pub struct WorldState {
     pub(crate) socials: Socials,
     pub(crate) entity_world: EntityWorld,
     pub(crate) vnum_templates: VnumTemplates,
@@ -43,11 +50,17 @@ pub(super) fn create_state(world: World, socials: Socials) -> WorldState {
 }
 
 impl WorldState {
-    pub(super) fn update_world(&mut self) {
+    pub fn from_files(files: &dyn Files) -> WorldState {
+        let world = crate::world::load_world(files, "data/area");
+        let socials = crate::socials::load_socials(files, "data/socials.txt");
+        create_state(world, socials)
+    }
+
+    pub fn update_world(&mut self) {
         update_entity_world(self);
     }
 
-    pub(super) fn add_player(&mut self, name: &str) {
+    pub fn add_player(&mut self, name: &str) {
         let player_components = self.entity_world.make_player_components(name);
 
         let player_id = self.entity_world.add_player(name, player_components);
@@ -66,5 +79,16 @@ impl WorldState {
         let player = self.entity_world.entity_info(player_id);
         let mut act = self.players.act_alone(&player);
         echo!(act.others(), "$^$n materializes from thin air.\r\n");
+    }
+
+    pub fn process_player_command(&mut self, player: &str, words: &[&str]) {
+        crate::commands::process_player_command(self, player, words);
+    }
+
+    pub fn player_echoes(&mut self, player: &str) -> Option<&mut String> {
+        self.players
+            .player_echoes
+            .get_mut(player)
+            .map(|echoes| &mut echoes.echo_buffer)
     }
 }

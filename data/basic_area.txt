@@ -1,0 +1,77 @@
+#DAWNAREADATA
+Name        Gnome Hill~
+ShortName   Gnome Hill~
+Continent   gnomehill~
+End
+
+
+#MOBILES
+#0
+
+
+#OBJECTS
+#0
+
+
+#ROOMS
+#1
+Name The void.~
+Desc There's nothing here.
+~
+End
+
+#2
+Name Limbo.~
+Desc You're in limbo.
+~
+End
+
+#3000
+Name In a city.~
+Desc There's a city here.
+~
+End
+
+#7371
+Name In a school.~
+Desc There's a school here.
+~
+End
+
+#23611
+Name On a gnome hill.~
+Desc You're on a hill. You see some gnomes here.
+~
+Sector city~
+Exit east 23612
+End
+
+#23612
+Name Next to a gnome hill.~
+Desc You're next to a hill. You see some gnomes there.
+~
+Sector city~
+End
+
+#27003
+Name In another city.~
+Desc There's another city here.
+~
+Sector city~
+End
+
+#0
+
+
+#RESETS2
+S
+
+
+#SHOPS
+#0
+
+
+#MOBPROGS
+#0
+
+#$

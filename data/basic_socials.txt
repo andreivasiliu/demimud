@@ -1,0 +1,23 @@
+#SOCIAL
+Name        nod~
+CharNoArg   You nod.~
+OthersNoArg $n nods.~
+CharFound   You nod at $M.~
+OthersFound $n nods at $N.~
+VictFound   $n nods at you.~
+CharAuto    You nod at yourself.~
+OthersAuto  $n nods at $mself.~
+End
+
+#SOCIAL
+Name        smile~
+CharNoArg   You smile.~
+OthersNoArg $n smiles.~
+CharFound   You smile at $M.~
+OthersFound $n smiles at $N.~
+VictFound   $n smiles at you.~
+CharAuto    You smile at yourself.~
+OthersAuto  $n smiles at $mself.~
+End
+
+#END

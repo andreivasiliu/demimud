@@ -8,13 +8,17 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["net"]
+net = ["netcore", "libtelnet-rs", "bincode"]
 
 [dependencies]
-netcore = { path = "../netcore" }
+netcore = { path = "../netcore", optional = true }
+libtelnet-rs = { version = "1.1", optional = true }
+bincode = { version = "1.3", optional = true }
 serde = { version = "1.0", features = ["derive"] }
-libtelnet-rs = "1.1"
-bincode = "1.3"
 Inflector = "0.11"
 rand = "0.8"
 lazy_static = "1.4"

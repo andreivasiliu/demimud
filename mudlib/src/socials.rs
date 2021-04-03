@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, path::Path};
 
-use crate::file_parser::FileParser;
+use crate::{file_parser::FileParser, files::Files};
 
 pub(crate) struct Socials {
     socials: BTreeMap<String, Social>,
@@ -33,8 +33,8 @@ impl Socials {
     }
 }
 
-pub(crate) fn load_socials(path: &Path) -> Socials {
-    let contents = std::fs::read_to_string(path).unwrap();
+pub(crate) fn load_socials(files: &dyn Files, path: &str) -> Socials {
+    let contents = files.read_file(path).unwrap();
     let mut parser = FileParser::new(&contents);
 
     let mut socials = BTreeMap::new();
