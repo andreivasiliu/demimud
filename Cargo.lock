@@ -52,6 +52,7 @@ name = "clicore"
 version = "0.1.0"
 dependencies = [
  "mudlib",
+ "wasi",
 ]
 
 [[package]]

@@ -15,13 +15,20 @@ use crate::world::{
 };
 
 pub(crate) struct VnumTemplates {
-    pub vnum_to_entity: Vec<Option<PermanentEntityId>>,
+    pub vnum_to_room_entity: Vec<Option<PermanentEntityId>>,
     pub vnum_to_mobprog: Vec<Option<String>>,
     pub object_components: Vec<Option<(Components, Vec<Components>)>>,
     pub mobile_components: Vec<Option<(Components, Vec<Components>)>>,
 }
 
-pub(crate) fn import_from_world(entity_world: &mut EntityWorld, world: &World) -> VnumTemplates {
+// Note: this should probably become an entity that contains all of its rooms
+pub(crate) struct Area {
+    pub name: String,
+    pub vnums: (Vnum, Vnum),
+    pub credits: String,
+}
+
+pub(crate) fn import_from_world(entity_world: &mut EntityWorld, world: &World) -> (VnumTemplates, Vec<Area>) {
     let mut room_vnum_to_id = HashMap::new();
     let mut exit_leads_to = HashMap::new();
 
@@ -191,14 +198,14 @@ pub(crate) fn import_from_world(entity_world: &mut EntityWorld, world: &World) -
     }
 
     let mut vnum_templates = VnumTemplates {
-        vnum_to_entity: Vec::with_capacity(world.rooms.len()),
+        vnum_to_room_entity: Vec::with_capacity(world.rooms.len()),
         vnum_to_mobprog: Vec::with_capacity(world.mobprogs.len()),
         object_components: Vec::with_capacity(world.objects.len()),
         mobile_components: Vec::with_capacity(world.mobiles.len()),
     };
 
     vnum_templates
-        .vnum_to_entity
+        .vnum_to_room_entity
         .resize(world.rooms.len(), None);
     vnum_templates
         .vnum_to_mobprog
@@ -213,7 +220,7 @@ pub(crate) fn import_from_world(entity_world: &mut EntityWorld, world: &World) -
     for room in &world.rooms {
         if room.vnum.0 != 0 {
             let room_entity = entity_world.entity_info(room_vnum_to_id[&room.vnum.0]);
-            vnum_templates.vnum_to_entity[room.vnum.0] = Some(room_entity.permanent_entity_id());
+            vnum_templates.vnum_to_room_entity[room.vnum.0] = Some(room_entity.permanent_entity_id());
         }
     }
 
@@ -311,7 +318,17 @@ pub(crate) fn import_from_world(entity_world: &mut EntityWorld, world: &World) -
         }
     }
 
-    vnum_templates
+    let mut areas = Vec::with_capacity(world.areas.len());
+
+    for (area, _reset_commands) in &world.areas {
+        areas.push(Area {
+            name: area.name.clone(),
+            vnums: area.vnums,
+            credits: area.credits.clone(),
+        });
+    }
+
+    (vnum_templates, areas)
 }
 
 fn import_mobile_components(

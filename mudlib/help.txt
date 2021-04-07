@@ -1,43 +1,11 @@
-`m# Looking`^
+This is DemiMUD, a basic area loader that lets you explore the world of Dawn of
+Time, although with a very limited experience.
 
-You can '`Wlook`^' (or just '`Wl`^' for short) to examine the room you are in. You can
-also look at a specific object, NPC, player, or at certain things in the room
-description, for example '`Wlook bench`^' or '`Wlook dog`^'.
+Currently it implements less than 1% of Dawn of Time's features. See more at:
+https://github.com/andreivasiliu/demimud
 
-`m# Movement`^
+See also: `Whelp commands`^, `Whelp demimud`^, `Whelp credits`^, `Whelp cli`^, `Whelp emote`^.
 
-Examine your room to see what exits are available; you can move between rooms
-by using the name of the exit as a command.
-
-The common exits are '`Wnorth`^', '`Weast`^', '`Wsouth`^', '`Wwest`^', '`Wup`^', and '`Wdown`^'. These
-can all be abbreviated to the first letter of their word ('`Wn`^', '`We`^', etc).
-
-If you are lost, the '`Wmap`^' command will generate a map based on the current
-room to help with navigation, or you can '`Wrecall`^' to one of the well-known
-places.
-
-`m# Communication`^
-
-Use '`Wsay <message>`^' to say something that will be heard by all players in your
-current room.
-
-There are also various emotes you can use, like '`Wnod`^', '`Wsmile`^', etc. They
-can be used either own their own, or with a target (for example '`Wpoint gnome`^').
-
-The '`Wemotes`^' command will show the list of emotes, and giving it the name of
-an emote will show what messages it would echo to people in the room.
-
-To target yourself with an emote, either use your name or me/self/myself.
-
-`m# Inventory`^
-
-Each player and mobile has an inventory to store items; to check what items you
-are holding, use '`Winventory`^' (or '`Winv`^' or '`Wi`^' for short).
-
-To pick up or drop items from the ground, use '`Wget <name>`^' and '`Wdrop <name>`^'.
-
-`m# Administrative commands`^
-
-Use '`Wwho`^' to check who is in the realm. You can '`Wrestart`^' and '`Wshutdown`^' the
-whole server as well, and also crash it with the '`Wpanic`^' command.
-
+If you are lost, type '`Wrecall mudschool`^'. Currently DemiMUD has enough logic
+to support the first 13 rooms of Dawn of Time's MudSchool, which will teach you
+most of the commands implemented in DemiMUD so far.

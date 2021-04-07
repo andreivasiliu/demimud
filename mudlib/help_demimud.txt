@@ -1,0 +1,20 @@
+DemiMUD is a prototype MUD engine written in Rust.
+
+The code is available on an LGPL-3.0 license at:
+https://github.com/andreivasiliu/demimud
+
+DemiMUD's codebase is written completely from scratch, and is not derived from
+Dawn of Time or any other DikuMUD derivatives, although it is inspired by their
+look and feel, and could not exist without them.
+
+Area, object and NPC descriptions are imported from Dawn of Time v.16r, which
+was made by Michael Garratt (c) 1997-2004. For a full list of credits, see the
+`Whelp credits`^ command. See https://www.dawnoftime.org/ (on archive.org if
+it is down).
+
+Currently only about 20 commands are supported (movement and basic object
+interaction with no stats, combat, etc), and has less than 1% of the features
+of Dawn of Time. If you wish to try DoT, see the website linked above (note
+that downloads of .tgz/.zip archives are possible on archive.org as well).
+
+If you're playing this via WASM, see '`Whelp cli`^'.

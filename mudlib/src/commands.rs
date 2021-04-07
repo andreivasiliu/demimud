@@ -8,6 +8,7 @@ use crate::{
     echo,
     entity::{EntityId, EntityWorld},
     find_entities::{EntityIterator, MatchError},
+    import::Area,
     socials::Socials,
     state::WorldState,
     world::{Shop, VnumOrKeyword},
@@ -23,6 +24,7 @@ pub(crate) struct EntityAgent<'e, 'p> {
     entity_world: &'e mut EntityWorld,
     socials: &'e Socials,
     vnum_templates: &'e VnumTemplates,
+    areas: &'e Vec<Area>,
     players: &'p mut Players,
 
     entity_id: EntityId,
@@ -32,8 +34,9 @@ impl EntityAgent<'_, '_> {
     pub fn new<'a>(world_state: &'a mut WorldState, entity_id: EntityId) -> EntityAgent<'a, 'a> {
         EntityAgent {
             entity_world: &mut world_state.entity_world,
-            socials: &mut world_state.socials,
-            vnum_templates: &mut world_state.vnum_templates,
+            socials: &world_state.socials,
+            vnum_templates: &world_state.vnum_templates,
+            areas: &world_state.areas,
             players: &mut world_state.players,
 
             entity_id,
@@ -45,6 +48,7 @@ impl EntityAgent<'_, '_> {
             entity_world: self.entity_world,
             socials: self.socials,
             vnum_templates: self.vnum_templates,
+            areas: self.areas,
             players: self.players,
 
             entity_id,
@@ -65,6 +69,9 @@ fn process_agent_command(agent: &mut EntityAgent, words: &[&str]) -> bool {
         }
         &["die"] => {
             agent.do_die();
+        }
+        &["areas"] => {
+            agent.do_areas();
         }
         &["buy", item] => {
             agent.do_buy(item);
@@ -265,6 +272,7 @@ pub(crate) fn process_player_command(world_state: &mut WorldState, player: &str,
         entity_world: &mut world_state.entity_world,
         socials: &world_state.socials,
         vnum_templates: &world_state.vnum_templates,
+        areas: &world_state.areas,
         players: &mut world_state.players,
         entity_id: player_id,
     };
@@ -283,7 +291,11 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
     fn do_help(&mut self, help_file: Option<&str>) {
         let help_text = match help_file {
+            Some("commands") => include_str!("../help_commands.txt"),
             Some("emote") => include_str!("../help_emote.txt"),
+            Some("cli") => include_str!("../help_cli.txt"),
+            Some("demimud") => include_str!("../help_demimud.txt"),
+            Some("credits") => include_str!("../help_credits.txt"),
             None => include_str!("../help.txt"),
             _ => "Unknown help file. See '`Whelp`^' without an argument.\r\n",
         };
@@ -309,6 +321,29 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
             .landmark("limbo")
             .expect("Limbo should always exist");
         self.entity_world.move_entity(self.entity_id, limbo);
+    }
+
+    pub fn do_areas(&mut self) {
+        echo!(self.info(), "Areas:\r\n");
+
+        for area in self.areas {
+            // Expensive, but let's honor them properly.
+            let credits = area
+                .credits
+                .split_whitespace()
+                .map(|builder| format!("`M{}`^", builder))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            echo!(
+                self.info(),
+                "`C{:>32}`^ - `g{:>5}`^..`g{:>5}`^ - {}\r\n",
+                area.name,
+                area.vnums.0 .0,
+                area.vnums.1 .0,
+                credits,
+            );
+        }
     }
 
     fn do_buy(&mut self, item_name: &str) {
@@ -512,7 +547,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         echo!(self.info(), "{}", map);
     }
 
-    fn do_look(&mut self) {
+    pub fn do_look(&mut self) {
         let myself = self.entity_world.entity_info(self.entity_id);
         let room_id = self.entity_world.room_of(self.entity_id);
         let room = self.entity_world.entity_info(room_id);
@@ -520,11 +555,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         let mut info = self.players.info(&myself);
 
         // Title
-        echo!(
-            info,
-            "`y{}`^\r\n",
-            room.component_info().internal_title()
-        );
+        echo!(info, "`y{}`^\r\n", room.component_info().internal_title());
 
         // Description
         let description = room.component_info().internal_description();
@@ -2324,7 +2355,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
         let room = self
             .vnum_templates
-            .vnum_to_entity
+            .vnum_to_room_entity
             .get(to_room_vnum)
             .and_then(|permanent_id| *permanent_id)
             .and_then(|permanent_id| self.entity_world.old_entity(&permanent_id));
@@ -2374,7 +2405,9 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
         // Also teleport followers.
         let mut agent = self.switch_agent(target_id);
+        agent.do_look();
         agent.check_followers(from_room_id, "void", room_id);
+        agent.check_triggers_others(Action::Greet);
     }
 
     pub fn do_mob_dequeue_all(&mut self) {
@@ -2403,7 +2436,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
         let room = self
             .vnum_templates
-            .vnum_to_entity
+            .vnum_to_room_entity
             .get(at_room_vnum)
             .and_then(|permanent_id| *permanent_id)
             .and_then(|permanent_id| self.entity_world.old_entity(&permanent_id));
@@ -2439,7 +2472,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
         let room = self
             .vnum_templates
-            .vnum_to_entity
+            .vnum_to_room_entity
             .get(to_room_vnum)
             .and_then(|permanent_id| *permanent_id)
             .and_then(|permanent_id| self.entity_world.old_entity(&permanent_id));
@@ -2859,7 +2892,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         }
     }
 
-    fn check_triggers_others(&mut self, action: Action<'_>) {
+    pub fn check_triggers_others(&mut self, action: Action<'_>) {
         let myself = self.entity_world.entity_info(self.entity_id);
         let mut triggered = Vec::new();
 
@@ -2941,9 +2974,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
                 for line in lines {
                     if let MobProgTrigger::Act { pattern } = &mobprog.trigger {
-                        println!("Checking '{}' against '{}'", pattern, line);
                         if line.contains(pattern) {
-                            println!("Matched!");
                             triggered.push((entity.entity_id(), mobprog.code.clone()));
                         }
                     }
@@ -3139,6 +3170,7 @@ pub(super) fn update_wander(world_state: &mut WorldState) {
             entity_world,
             socials: &world_state.socials,
             vnum_templates: &world_state.vnum_templates,
+            areas: &world_state.areas,
             players: &mut world_state.players,
             entity_id: wanderer_id,
         };
@@ -3183,6 +3215,7 @@ pub(super) fn update_command_queue(world_state: &mut WorldState) {
             entity_world,
             socials: &world_state.socials,
             vnum_templates: &world_state.vnum_templates,
+            areas: &world_state.areas,
             players: &mut world_state.players,
             entity_id,
         };

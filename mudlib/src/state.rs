@@ -12,7 +12,7 @@
 //!
 //! On a crash or restart, this entire state is thrown away and reloaded.
 
-use crate::commands::EntityAgent;
+use crate::{commands::{Action, EntityAgent}, import::Area};
 use crate::{
     acting::{PlayerEcho, Players},
     commands::update_entity_world,
@@ -27,6 +27,7 @@ pub struct WorldState {
     pub(crate) socials: Socials,
     pub(crate) entity_world: EntityWorld,
     pub(crate) vnum_templates: VnumTemplates,
+    pub(crate) areas: Vec<Area>,
 
     pub(crate) players: Players,
     pub(crate) wander_ticks: u8,
@@ -38,11 +39,12 @@ pub(super) fn create_state(world: World, socials: Socials) -> WorldState {
     };
 
     let mut entity_world = EntityWorld::new();
-    let vnum_templates = import_from_world(&mut entity_world, &world);
+    let (vnum_templates, areas) = import_from_world(&mut entity_world, &world);
 
     WorldState {
         entity_world,
         vnum_templates,
+        areas,
         socials,
         players,
         wander_ticks: 0,
@@ -69,8 +71,6 @@ impl WorldState {
             .landmark("gnomehill")
             .expect("Starting location should exist");
         self.entity_world.move_entity(player_id, starting_location);
-        let mut agent = EntityAgent::new(self, player_id);
-        agent.add_silver(200, player_id);
 
         self.players
             .player_echoes
@@ -79,16 +79,51 @@ impl WorldState {
         let player = self.entity_world.entity_info(player_id);
         let mut act = self.players.act_alone(&player);
         echo!(act.others(), "$^$n materializes from thin air.\r\n");
+
+        let mut agent = EntityAgent::new(self, player_id);
+        agent.add_silver(200, player_id);
+        agent.do_look();
+        agent.check_triggers_others(Action::Login);
     }
 
     pub fn process_player_command(&mut self, player: &str, words: &[&str]) {
         crate::commands::process_player_command(self, player, words);
     }
 
+    /// Get a mutable reference to a player's output echo buffer.
+    ///
+    /// Return None if the player doesn't exist, or a mutable buffer with text
+    /// that should be sent to the player. The user must clear the buffer
+    /// afterwards.
+    ///
+    /// This output should be passed to `colors::colorize()` before being sent
+    /// to a player.
     pub fn player_echoes(&mut self, player: &str) -> Option<&mut String> {
         self.players
             .player_echoes
             .get_mut(player)
             .map(|echoes| &mut echoes.echo_buffer)
+    }
+
+    /// Check if waiting more ticks in the current room would make something
+    /// happen.
+    ///
+    /// This is used in WASI to tell the player to press enter to let time pass
+    /// if mobs still have queued commands.
+    pub fn pending_room_events(&self, player: &str) -> bool {
+        let player = match self.entity_world.player_entity_id(player) {
+            Some(entity_id) => entity_id,
+            None => return false,
+        };
+
+        let player = self.entity_world.entity_info(player);
+
+        for entity in player.room().contained_entities() {
+            if !entity.components().general.command_queue.is_empty() {
+                return true;
+            }
+        }
+
+        false
     }
 }

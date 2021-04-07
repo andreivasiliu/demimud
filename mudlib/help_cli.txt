@@ -1,0 +1,19 @@
+DemiMUD is a prototype MUD engine written in Rust. See '`Whelp demimud`^' for more
+information about it.
+
+This CLI takes DemiMUD and turns it into a simple single-player REPL, akin to
+an Interactive Fiction game.
+
+It is mostly meant to be compiled to WASM/WASI as a way to show off its
+features.
+
+WASI support for non-blocking reads (especially on https://webassembly.sh) is
+currently pretty poor. Because of this, time passes only when pressing enter.
+
+Because some mobs have delays between their interactions, the CLI scans all
+mobs in the player's room and checks if they have queued commands; if they do,
+the prompt will show "press enter".
+
+Pressing enter without any command will advance time by up to 100 ticks until
+at least one message is printed to the player, or mobs no longer have queued
+events. Pressing enter with a command will always advance time by just 1 tick.

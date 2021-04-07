@@ -1,0 +1,2 @@
+Area, object and NPC descriptions are imported from Dawn of Time v1.69r by
+Michael Garratt (c) 1997-2004. For a full list of credits, type `Whelp credits`^.

@@ -9,3 +9,8 @@ edition = "2018"
 
 [dependencies]
 mudlib = { path = "../mudlib", default-features = false }
+wasi = "0.10.2"
+
+[features]
+default = []
+dawn-areas = []

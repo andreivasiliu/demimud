@@ -113,6 +113,7 @@ pub(super) struct AreaData {
     pub(super) short_name: String,
 
     pub(super) vnums: (Vnum, Vnum),
+    pub(super) credits: String,
     pub(super) continent: String,
 }
 

@@ -64,6 +64,7 @@ fn load_area_data(parser: &mut FileParser) -> AreaData {
         name: Default::default(),
         short_name: Default::default(),
         vnums: Default::default(),
+        credits: Default::default(),
         continent: Default::default(),
     };
 
@@ -91,6 +92,7 @@ fn load_area_data(parser: &mut FileParser) -> AreaData {
 
                 area_data.vnums = (Vnum(vnum_1), Vnum(vnum_2));
             }
+            "Credits" => area_data.credits = value.to_string(),
             "Continent" => area_data.continent = value.to_string(),
             _ => (),
         }

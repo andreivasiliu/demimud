@@ -1,0 +1,20 @@
+DemiMUD's codebase is implemented from scratch, and is able to load the Dawn
+of Time MUD's area files via reverse engineering and with help from SMAUG's
+documentation files (which laregely still apply as both are DikuMUD
+derivatives).
+
+The codebase is distributed via the GNU Lesser General Public License v3.0. See
+the LICENSE file at: https://github.com/andreivasiliu/demimud
+
+The WASM/WASI binary, however, also includes area files taken from the Dawn of
+Time MUD, by Michael Garratt (c) 1997-2004. See the http://www.dawnoftime.org/
+website for more information (possibly on archive.org if it is down).
+
+Credits for each area file are listed with the '`Wareas`^' command.
+
+Dawn of Time is based on Based on Diku by Hans Katya, Tom, Michael, and
+Sebastian, MERC 2.1 by Hatchet, Furey and Kahn ROM 2.4 (c)1993-1996 by Russ
+Taylor, Oblivion 2.0 (C)1996-97 by Wes Wagner.
+
+Although DemiMUD does not include any code or areas from the MUDs Dawn of Time
+is based on, it would not be what it is without their heroic efforts.

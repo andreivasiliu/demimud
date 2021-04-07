@@ -1,11 +1,44 @@
 #DAWNAREADATA
-Name        Gnome Hill~
-ShortName   Gnome Hill~
-Continent   gnomehill~
+Name        DemiMUD~
+ShortName   DemiMUD~
+Continent   demimud~
 End
 
 
 #MOBILES
+#1
+Name clockwork sprite~
+ShortD a clockwork sprite~
+LongD A clockwork sprite is here, trying to keep close to you.~
+Desc A small mechanical sprite is falling erratically through the wind, gliding
+and guiding itself with the help of large semi-transparent wings. Its body is
+mostly made out of a wooden frame and metal gears, intricately arranged into a
+compact mechanism.
+~
+Act    dont_wander~
+Sex    neutral~
+MProg LOGINROOM 1~
+MProg SPEECH 2 yes~
+
+END
+
+#2
+Name stone golem~
+ShortD a stone golem~
+LongD A stone golem guards the entry to the building.~
+Desc A golem made entirely of stone stands eerly still in front of the
+building's gates. It has a rough humanoid form, and the head has what appear
+to be eyes and a mouth carved into the stone, but it does not appear able to
+move them.
+~
+Act    dont_wander~
+Sex    neutral~
+MProg GREET 3 100~
+MProg SPEECH 4 yes~
+
+END
+
+
 #0
 
 
@@ -33,22 +66,30 @@ Desc There's a city here.
 End
 
 #7371
-Name In a school.~
-Desc There's a school here.
+Name Entrance to the Sky Academy~
+Desc You are in a small courtyard in front of a large stone building. There are 
+hedges decorating the yard, forming a little maze. Through its center passes
+a long cobblestone path that leads to the academy's gates.
 ~
+Exit north 7372
+EFlags door closed~
+End
+
+#7372
+Name The Sky Academy's antechamber~
+Desc A sign is prominently displayed in the middle of the room. With large letters,
+it reads: "This is the end of DemiMUD's basic area; the rest is not
+implemented. If you want more, compile DemiMUD with the dawn-areas feature."
+~
+Exit south 7371
+EFlags door closed~
 End
 
 #23611
-Name On a gnome hill.~
-Desc You're on a hill. You see some gnomes here.
-~
-Sector city~
-Exit east 23612
-End
-
-#23612
-Name Next to a gnome hill.~
-Desc You're next to a hill. You see some gnomes there.
+Name Falling though clouds~
+Desc You are in the clouds, feeling powerful wind brushing all around you as you
+fall. The ground is not visible, clouds of all shapes surrounding you in all
+directions, coming in and out of sight as you fall endlessly.
 ~
 Sector city~
 End
@@ -64,6 +105,8 @@ End
 
 
 #RESETS2
+M 0 1 1 23611 1
+M 0 2 1 7371 1
 S
 
 
@@ -72,6 +115,65 @@ S
 
 
 #MOBPROGS
+#1
+title greet new players~
+code 
+mq1 sayto $n Hello there. Are you new around here? I'm here to`1assist.
+mq2 mob echo The clockwork sprite flies towards you, struggling against the winds to reach`1you despite its light mechanical body.
+mq3 mob echo It seems it's waiting for an answer. Try to `Wsay yes`^ perhaps.
+~
+disabled false
+END
+
+#2
+title send player to academy~
+code 
+mob dequeueall
+mq1 say You are new? I patrol these clouds waiting for new`1people like you! The Sky Academy has sent me here, and it is my job to send you`1to them."
+mq2 say Just wait one moment please!
+
+mq3 mob echo The wings on the clockwork sprite fold, until the sprite takes the appearance
+mq3 mob echo of a simple wooden ball. Gaining speed, it falls down below you and starts to
+mq3 mob echo shine brightly.
+
+mq4 mob echo In a split second, the ball expands into a portal below you. The portal doesn't
+mq4 mob echo seem affected by gravity, and draws closer to you at terrifying speed as you
+mq4 mob echo fall towards it.
+>
+mq5 mob echo The portal envelops you.
+mq5 mob transfer $n 7371
+mq5 mob at 7371 mob echo You emerge 15 feet above the ground, hurtling down towards it with terrifying`1speed.
+
+mq6 mob at 7371 mob echo You hit the ground with an agonizing *THUD*, likely breaking all of your bones.
+
+mq7 mob at 7371 mob echo You take a moment to recover, and to your surprise you can easily stand up`1through the pain. You have somehow been spared any damage despite the deadly`1impact.
+~
+disabled false
+END
+
+#3
+title greet visitor~
+code 
+mq2 sayto $n Visitor. State your business.
+mq3 say Are you here to take the Sky Academy's tutorial?
+~
+disabled false
+END
+
+#4
+title say yes to open academy~
+code 
+mob dequeueall
+pmote $n turns its head towards @.
+mq2 sayto $n Very well.
+mq2 open north
+mq2 say Go north through the gates.
+mq3 mob echo You take a moment to gather your thoughts. The first priority is to examine`1your surroundings, so `Wlook`^ around.
+mq4 mob echo The gates to the north look open now. Go `Wnorth`^ through them.
+~
+disabled false
+END
+
 #0
 
 #$
