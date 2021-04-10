@@ -12,7 +12,7 @@ pub(crate) struct EntityAgent<'e, 'p> {
 }
 
 impl EntityAgent<'_, '_> {
-    pub fn new<'a>(world_state: &'a mut WorldState, entity_id: EntityId) -> EntityAgent<'a, 'a> {
+    pub fn new(world_state: &mut WorldState, entity_id: EntityId) -> EntityAgent<'_, '_> {
         EntityAgent {
             entity_world: &mut world_state.entity_world,
             socials: &world_state.socials,
@@ -24,7 +24,7 @@ impl EntityAgent<'_, '_> {
         }
     }
 
-    pub fn switch_agent<'a>(&'a mut self, entity_id: EntityId) -> EntityAgent<'a, 'a> {
+    pub fn switch_agent(&mut self, entity_id: EntityId) -> EntityAgent<'_, '_> {
         EntityAgent {
             entity_world: self.entity_world,
             socials: self.socials,

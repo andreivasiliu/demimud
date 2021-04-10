@@ -37,7 +37,7 @@ impl<'a> FileParser<'a> {
         }
 
         let mut section = &self.0[start + 1..start + end];
-        if section.chars().last() == Some('\r') {
+        if section.ends_with('\r') {
             section = &section[..section.len() - 1]
         }
         self.0 = &self.0[start + end + 1..];
@@ -58,13 +58,13 @@ impl<'a> FileParser<'a> {
 
     pub fn skip_one_newline(&mut self) {
         if self.0.is_empty() {
-            return;
-        } else if self.0.chars().next() == Some('\r') {
+            // Nothing to skip
+        } else if self.0.starts_with('\r') {
             self.0 = &self.0[1..];
-            if self.0.chars().next() == Some('\n') {
+            if self.0.starts_with('\n') {
                 self.0 = &self.0[1..];
             }
-        } else if self.0.chars().next() == Some('\n') {
+        } else if self.0.starts_with('\n') {
             self.0 = &self.0[1..];
         } else {
             self.panic_on_line("No newline found to skip");

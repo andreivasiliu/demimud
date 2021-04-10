@@ -255,7 +255,7 @@ impl EntityWorld {
         if let Some(entity) = self.entities.get(&permanent_entity_id.id) {
             if entity.created_in_era == permanent_entity_id.created_in_era {
                 Some(EntityInfo {
-                    entity: entity,
+                    entity,
                     entity_world: self,
                 })
             } else {
@@ -293,7 +293,7 @@ impl EntityWorld {
             .expect("Internally constructed IDs should be correct");
 
         EntityInfo {
-            entity: entity,
+            entity,
             entity_world: self,
         }
     }
@@ -605,7 +605,10 @@ impl<'e> EntityInfo<'e> {
         self.iter_by_type(EntityType::ExtraDescription)
     }
 
-    pub fn visible_entities<'a>(&'a self, keyword: &'a str) -> impl Iterator<Item = EntityInfo<'a>> + 'a {
+    pub fn visible_entities<'a>(
+        &'a self,
+        keyword: &'a str,
+    ) -> impl Iterator<Item = EntityInfo<'a>> + 'a {
         let room = self.room();
 
         let is_myself = ["me", "self", "myself"].contains(&keyword);
@@ -613,22 +616,19 @@ impl<'e> EntityInfo<'e> {
 
         let inventory_and_room = self
             .contained_entities_with_descriptions()
-            .chain(room.contained_entities_with_descriptions())
-            .filter(move |entity| {
-                if is_myself && entity.entity_id() == myself_id {
-                    true
-                } else {
-                    entity
-                        .component_info()
-                        .keyword()
-                        .split_whitespace()
-                        .any(|word| word.eq_ignore_ascii_case(keyword))
-                }
-            });
+            .chain(room.contained_entities_with_descriptions());
 
-        let found_entities = inventory_and_room;
-
-        found_entities
+        inventory_and_room.filter(move |entity| {
+            if is_myself && entity.entity_id() == myself_id {
+                true
+            } else {
+                entity
+                    .component_info()
+                    .keyword()
+                    .split_whitespace()
+                    .any(|word| word.eq_ignore_ascii_case(keyword))
+            }
+        })
     }
 
     pub fn find_entity<F>(&self, keyword: &str, matcher: F) -> Found<'e>

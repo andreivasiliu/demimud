@@ -7,7 +7,7 @@ use std::{borrow::Cow, collections::HashMap};
 
 use lazy_static::lazy_static;
 
-static COLOR_CODES: &[(char, &'static str)] = &[
+static COLOR_CODES: &[(char, &str)] = &[
     ('s', "\x1b[1;30m"),
     ('S', "\x1b[1;30m"),
     ('r', "\x1b[0;31m"),
@@ -49,12 +49,7 @@ pub fn colorize(text: &str) -> Cow<'_, str> {
     let mut buffer = String::new();
     let mut processed = 0;
 
-    loop {
-        let backtick = match text[processed..].find('`') {
-            Some(index) => index,
-            None => break,
-        };
-
+    while let Some(backtick) = text[processed..].find('`') {
         buffer.push_str(&text[processed..processed + backtick]);
         processed += backtick;
 
@@ -79,7 +74,7 @@ pub fn colorize(text: &str) -> Cow<'_, str> {
 }
 
 pub fn recolor<'a>(color: &str, text: &'a str) -> Cow<'a, str> {
-    if text.find("`").is_some() {
+    if text.contains('`') {
         Cow::Owned(text.replace("`^", color).replace("`x", color))
     } else {
         Cow::Borrowed(text)

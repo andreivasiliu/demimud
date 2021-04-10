@@ -150,7 +150,7 @@ impl InternComponent for StringInterner {
         ActInfo {
             keyword: intern(keyword),
             short_description: intern(short_description),
-            gender: gender,
+            gender,
         }
     }
 

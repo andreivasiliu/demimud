@@ -299,7 +299,7 @@ fn process_login_command<F: FnMut(&str)>(
     connection: &mut Connection,
     world_state: &mut WorldState,
     command_words: &[&str],
-) -> () {
+) {
     match command_words {
         &["name", name] => {
             println!(

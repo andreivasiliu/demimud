@@ -309,7 +309,7 @@ where
                         matched_conditions,
                         error,
                     } => {
-                        if let Some(_) = C2::component_from_entity(&entity) {
+                        if C2::component_from_entity(&entity).is_some() {
                             BadMatch {
                                 entity,
                                 matched_conditions,
@@ -368,7 +368,7 @@ pub(crate) trait EntityIterator<'e, C: 'e>: Sized {
         }
     }
 
-    fn filter_by_keyword<'k>(self, keyword: &'k str) -> FilterByKeyword<'k, Self> {
+    fn filter_by_keyword(self, keyword: &str) -> FilterByKeyword<'_, Self> {
         FilterByKeyword {
             inner: self,
             keyword,
@@ -388,38 +388,34 @@ pub(crate) trait EntityIterator<'e, C: 'e>: Sized {
         }
     }
 
-    fn find_one_with_component_or<'error>(mut self, error: &'static str) -> Result<(EntityInfo<'e>, &'e C), MatchError> {
+    fn find_one_with_component_or(mut self, error: &'static str) -> Result<(EntityInfo<'e>, &'e C), MatchError> {
         let mut bad_match = None;
         let mut bad_match_conditions = 0;
         let mut unpreferred_match = None;
 
-        loop {
-            if let Some(item) = self.next_match_candidate() {
-                match item {
-                    GoodMatch {
-                        entity,
-                        preferred: Some(false),
-                        component,
-                        ..
-                    } => {
-                        unpreferred_match = Some((entity, component));
-                    }
-                    GoodMatch { entity, component, .. } => {
-                        return Ok((entity, component));
-                    }
-                    BadMatch {
-                        matched_conditions,
-                        error,
-                        ..
-                    } => {
-                        if matched_conditions >= bad_match_conditions {
-                            bad_match = Some(error);
-                            bad_match_conditions = matched_conditions;
-                        }
+        while let Some(item) = self.next_match_candidate() {
+            match item {
+                GoodMatch {
+                    entity,
+                    preferred: Some(false),
+                    component,
+                    ..
+                } => {
+                    unpreferred_match = Some((entity, component));
+                }
+                GoodMatch { entity, component, .. } => {
+                    return Ok((entity, component));
+                }
+                BadMatch {
+                    matched_conditions,
+                    error,
+                    ..
+                } => {
+                    if matched_conditions >= bad_match_conditions {
+                        bad_match = Some(error);
+                        bad_match_conditions = matched_conditions;
                     }
                 }
-            } else {
-                break;
             }
         }
 
@@ -432,7 +428,7 @@ pub(crate) trait EntityIterator<'e, C: 'e>: Sized {
         }
     }
 
-    fn find_one_or<'error>(self, error: &'static str) -> Result<EntityInfo<'e>, MatchError> {
+    fn find_one_or(self, error: &'static str) -> Result<EntityInfo<'e>, MatchError> {
         self.find_one_with_component_or(error).map(|result| result.0)
     }
 }

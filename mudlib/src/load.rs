@@ -118,8 +118,10 @@ fn load_mobile_data(parser: &mut FileParser) -> Vec<Mobile> {
 }
 
 fn load_mobile(parser: &mut FileParser, vnum: usize) -> Mobile {
-    let mut mobile = Mobile::default();
-    mobile.vnum = Vnum(vnum);
+    let mut mobile = Mobile {
+        vnum: Vnum(vnum),
+        .. Default::default()
+    };
 
     loop {
         let key = parser.read_word();
@@ -287,8 +289,10 @@ fn load_object_data(parser: &mut FileParser) -> Vec<Object> {
 }
 
 fn load_object(parser: &mut FileParser, vnum: usize) -> Object {
-    let mut object = Object::default();
-    object.vnum = Vnum(vnum);
+    let mut object = Object {
+        vnum: Vnum(vnum),
+        .. Default::default()
+    };
 
     loop {
         let key = parser.read_word();
@@ -373,8 +377,10 @@ fn load_room_data(parser: &mut FileParser) -> Vec<Room> {
 }
 
 fn load_room(parser: &mut FileParser, vnum: usize) -> Room {
-    let mut room = Room::default();
-    room.vnum = Vnum(vnum);
+    let mut room = Room {
+        vnum: Vnum(vnum),
+        .. Default::default()
+    };
 
     loop {
         let key = parser.read_word();

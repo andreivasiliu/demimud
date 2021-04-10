@@ -64,9 +64,10 @@ pub(crate) fn load_socials(files: &dyn Files, path: &str) -> Socials {
 
         if current_social.is_none() {
             assert_eq!(key, "Name");
-            let mut new_social = Social::default();
-            new_social.name = parser.read_until_tilde().trim_start().to_string();
-            current_social = Some(new_social);
+            current_social = Some(Social {
+                name: parser.read_until_tilde().trim_start().to_string(),
+                .. Default::default()
+            });
             continue;
         }
 
@@ -89,7 +90,7 @@ pub(crate) fn load_socials(files: &dyn Files, path: &str) -> Socials {
 
         let message = parser.read_until_tilde().trim_start();
 
-        if message.starts_with("$") {
+        if message.starts_with('$') {
             *attribute = String::from("$^") + message;
         } else {
             *attribute = message.to_string();
@@ -99,6 +100,7 @@ pub(crate) fn load_socials(files: &dyn Files, path: &str) -> Socials {
     Socials { socials }
 }
 
+// Dawn-format socials; currently using Ultra-Envy socials instead
 #[allow(dead_code)]
 fn load_old_socials(path: &Path) -> Socials {
     let contents = std::fs::read_to_string(path).unwrap();
@@ -126,9 +128,10 @@ fn load_old_socials(path: &Path) -> Socials {
 
         if current_social.is_none() {
             assert_eq!(key, "name");
-            let mut new_social = Social::default();
-            new_social.name = parser.read_until_tilde().to_string();
-            current_social = Some(new_social);
+            current_social = Some(Social {
+                name: parser.read_until_tilde().to_string(),
+                .. Default::default()
+            });
             continue;
         }
 

@@ -1,200 +1,207 @@
-use crate::{acting::EscapeVariables, agent::EntityAgent, colors::recolor, components::{Door, Mobile, Object}, echo, find_entities::EntityIterator, mobprogs::Action, state::WorldState, world::Shop};
 use crate::{
-    world::{common_direction, long_direction, opposite_direction},
+    acting::EscapeVariables,
+    agent::EntityAgent,
+    colors::recolor,
+    components::{Door, Mobile, Object},
+    echo,
+    find_entities::EntityIterator,
+    mobprogs::Action,
+    state::WorldState,
+    world::{common_direction, long_direction, opposite_direction, Shop},
 };
 use crate::{entity::Found, mapper::make_map};
 
 pub(crate) fn process_agent_command(agent: &mut EntityAgent, words: &[&str]) -> bool {
-    match words {
-        &["panic"] => {
+    match *words {
+        ["panic"] => {
             panic!("Oh no! I panicked!");
         }
-        &["help"] => {
+        ["help"] => {
             agent.do_help(None);
         }
-        &["help", help_file] => {
+        ["help", help_file] => {
             agent.do_help(Some(help_file));
         }
-        &["die"] => {
+        ["die"] => {
             agent.do_die();
         }
-        &["areas"] => {
+        ["areas"] => {
             agent.do_areas();
         }
-        &["buy", item] => {
+        ["buy", item] => {
             agent.do_buy(item);
         }
-        &["sell", item] => {
+        ["sell", item] => {
             agent.do_sell(item);
         }
-        &["eat", item] => {
+        ["eat", item] => {
             agent.do_eat(item, false);
         }
-        &["eat", item, "forcefully"] => {
+        ["eat", item, "forcefully"] => {
             agent.do_eat(item, true);
         }
-        &["mq", ticks, ref command @ ..] => {
+        ["mq", ticks, ref command @ ..] => {
             agent.do_queue(ticks, command.join(" "));
         }
-        &[mq, ref command @ ..] if mq.starts_with("mq") && mq[2..].parse::<u32>().is_ok() => {
+        [mq, ref command @ ..] if mq.starts_with("mq") && mq[2..].parse::<u32>().is_ok() => {
             agent.do_queue(&mq[2..], command.join(" "));
         }
-        &["mob", ref command @ ..] => {
+        ["mob", ref command @ ..] => {
             agent.do_mob(command);
         }
-        &["map"] => {
+        ["map"] => {
             agent.do_map();
         }
-        &["look"] | &["l"] | &["examine"] => {
+        ["look"] | ["l"] | ["examine"] => {
             agent.do_look();
         }
-        &[look, target] | &[look, "at", target] if ["look", "l", "examine"].contains(&look) => {
+        [look, target] | [look, "at", target] if ["look", "l", "examine"].contains(&look) => {
             agent.do_look_at(target);
         }
-        &["look", ..] | &["l", ..] | &["examine", ..] => {
+        ["look", ..] | ["l", ..] | ["examine", ..] => {
             echo!(agent.info(), "Syntax: '`Wlook <word>`^'\r\n");
         }
-        &["force", target, ref victim_words @ ..] => {
+        ["force", target, ref victim_words @ ..] => {
             agent.do_force(target, victim_words);
         }
-        &["say", target, ref message @ ..] if target.starts_with(">") => {
+        ["say", target, ref message @ ..] if target.starts_with('>') => {
             agent.do_say_to(&target[1..], &message.join(" "));
         }
-        &["sayto", target, ref message @ ..] => {
+        ["sayto", target, ref message @ ..] => {
             agent.do_say_to(target, &message.join(" "));
         }
-        &["say", ref message @ ..] => {
+        ["say", ref message @ ..] => {
             agent.do_say(&message.join(" "));
         }
-        &[target, ref message @ ..] if target.starts_with("'>") => {
+        [target, ref message @ ..] if target.starts_with("'>") => {
             agent.do_say_to(&target[2..], &message.join(" "));
         }
-        &[ref message @ ..] if message.len() > 0 && message[0].starts_with("'") => {
+        [ref message @ ..] if !message.is_empty() && message[0].starts_with('\'') => {
             agent.do_say(&message.join(" ")[1..]);
         }
-        &["rsay", ref message @ ..] if false => {
+        ["rsay", ref message @ ..] if false => {
             // Disabled; not needed
             agent.do_mob_rsay(&message.join(" "));
         }
-        &["rsay", target, ref message @ ..] if target.starts_with(">") => {
+        ["rsay", target, ref message @ ..] if target.starts_with('>') => {
             agent.do_say_to(&target[1..], &message.join(" "));
         }
-        &["rsay", ref message @ ..] => {
+        ["rsay", ref message @ ..] => {
             agent.do_say(&message.join(" "));
         }
-        &["recall"] => {
+        ["recall"] => {
             agent.do_recall(None);
         }
-        &["recall", location] => {
+        ["recall", location] => {
             agent.do_recall(Some(location));
         }
-        &["exits"] => {
+        ["exits"] => {
             agent.do_exits();
         }
-        &["get", "all"] => {
+        ["get", "all"] => {
             agent.do_get_all(false);
         }
-        &["drop", "all"] => {
+        ["drop", "all"] => {
             agent.do_drop_all(false);
         }
-        &["get"] => {
+        ["get"] => {
             agent.do_get(None, false);
         }
-        &["get", item] => {
+        ["get", item] => {
             agent.do_get(Some(item), false);
         }
-        &["get", item, "forcefully"] => {
+        ["get", item, "forcefully"] => {
             agent.do_get(Some(item), true);
         }
-        &["get", item, container] => {
+        ["get", item, container] => {
             agent.do_get_from(item, container, false);
         }
-        &["get", item, "from", container] => {
+        ["get", item, "from", container] => {
             agent.do_get_from(item, container, false);
         }
-        &["get", item, container, "forcefully"] => {
+        ["get", item, container, "forcefully"] => {
             agent.do_get_from(item, container, true);
         }
-        &["get", item, "from", container, "forcefully"] => {
+        ["get", item, "from", container, "forcefully"] => {
             agent.do_get_from(item, container, true);
         }
-        &["put", item, container] => {
+        ["put", item, container] => {
             agent.do_put_into(item, container, false);
         }
-        &["put", item, "into", container] => {
+        ["put", item, "into", container] => {
             agent.do_put_into(item, container, false);
         }
-        &["put", item, container, "forcefully"] => {
+        ["put", item, container, "forcefully"] => {
             agent.do_put_into(item, container, true);
         }
-        &["put", item, "into", container, "forcefully"] => {
+        ["put", item, "into", container, "forcefully"] => {
             agent.do_put_into(item, container, true);
         }
-        &["drop"] => {
+        ["drop"] => {
             agent.do_drop(None, false);
         }
-        &["drop", item] => {
+        ["drop", item] => {
             agent.do_drop(Some(item), false);
         }
-        &["drop", item, "forcefully"] => {
+        ["drop", item, "forcefully"] => {
             agent.do_drop(Some(item), true);
         }
-        &["give", item, target] | &["give", item, "to", target] => {
+        ["give", item, target] | ["give", item, "to", target] => {
             agent.do_give(item, target, false);
         }
-        &["give", item, target, "forcefully"] | &["give", item, "to", target, "forcefully"] => {
+        ["give", item, target, "forcefully"] | ["give", item, "to", target, "forcefully"] => {
             agent.do_give(item, target, true);
         }
-        &["give", ..] => {
+        ["give", ..] => {
             echo!(agent.info(), "Syntax: `Wgive <item> [to] <target>`^\r\n");
         }
-        &["open", target] => {
+        ["open", target] => {
             agent.do_open(target);
         }
-        &["close", target] => {
+        ["close", target] => {
             agent.do_close(target);
         }
-        &["unlock", target] => {
+        ["unlock", target] => {
             agent.do_unlock(target);
         }
-        &["lock", target] => {
+        ["lock", target] => {
             agent.do_lock(target);
         }
-        &["i"] | &["inv"] | &["inventory"] => {
+        ["i"] | ["inv"] | ["inventory"] => {
             agent.do_inventory();
         }
-        &["list"] | &["wares"] => {
+        ["list"] | ["wares"] => {
             agent.do_list();
         }
-        &["follow", target] => {
+        ["follow", target] => {
             agent.do_follow(target);
         }
-        &["unfollow"] => {
+        ["unfollow"] => {
             agent.do_unfollow();
         }
-        &["emote", ref message @ ..] => {
+        ["emote", ref message @ ..] => {
             agent.do_emote(&message.join(" "));
         }
-        &[ref message @ ..] if message.len() > 0 && message[0].starts_with(",") => {
+        [ref message @ ..] if !message.is_empty() && message[0].starts_with(',') => {
             agent.do_emote(&message.join(" ")[1..]);
         }
-        &["pmote", target, ref message @ ..] => {
+        ["pmote", target, ref message @ ..] => {
             agent.do_pmote(target, &message.join(" "));
         }
-        &["social"] | &["socials"] | &["emotes"] => {
+        ["social"] | ["socials"] | ["emotes"] => {
             agent.do_socials(None);
         }
-        &["social", social] | &["socials", social] | &["emotes", social] => {
+        ["social", social] | ["socials", social] | ["emotes", social] => {
             agent.do_socials(Some(social));
         }
-        &[direction] if agent.do_move(direction) => (),
-        &[social] if agent.do_social(social, None) => (),
-        &[social, target] if agent.do_social(social, Some(target)) => (),
-        &[cmd_word, ..] => {
+        [direction] if agent.do_move(direction) => (),
+        [social] if agent.do_social(social, None) => (),
+        [social, target] if agent.do_social(social, Some(target)) => (),
+        [cmd_word, ..] => {
             agent.do_unknown(cmd_word);
             return false;
         }
-        &[] => (),
+        [] => (),
     };
 
     true
@@ -508,7 +515,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         // Description
         let description = room.component_info().internal_description();
         echo!(info, "{}", description);
-        if !description.ends_with("\r") && !description.ends_with("\n") {
+        if !description.ends_with('\r') && !description.ends_with('\n') {
             echo!(info, "\r\n");
         }
 
@@ -596,7 +603,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
         // Description
         let description = target.component_info().external_description();
-        let newline = if description.ends_with("\r") || description.ends_with("\n") {
+        let newline = if description.ends_with('\r') || description.ends_with('\n') {
             ""
         } else {
             "\r\n"
@@ -739,14 +746,14 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
         let message = recolor(speech_color, message);
 
-        let (message, emote_prefix) = if message.starts_with("[") {
-            let end = message.find("]").unwrap_or(message.len());
+        let (message, emote_prefix) = if message.starts_with('[') {
+            let end = message.find(']').unwrap_or_else(|| message.len());
             (&message[end + 1..], Some(&message[1..end]))
         } else {
             (&message[..], None)
         };
 
-        let (message, emote_suffix) = if message.ends_with("]") {
+        let (message, emote_suffix) = if message.ends_with(']') {
             let start = message
                 .char_indices()
                 .rev()
@@ -1327,7 +1334,6 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
                     self.info(),
                     "You try to get a hold of yourself. You think you succeeded.\r\n"
                 );
-                return;
             }
             Found::Other(other) => {
                 let mut act = self.players.act_with(&myself, &other).store_acts();
@@ -1362,7 +1368,6 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
                     self.info(),
                     "You don't see any objects named like that in the room.\r\n"
                 );
-                return;
             }
         }
     }

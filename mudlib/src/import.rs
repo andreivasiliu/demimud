@@ -468,11 +468,10 @@ fn import_object_components(
         let keyword = &extra_description.keyword;
         let short_description = format!("extra description called '{}'", extra_description.keyword);
 
-        let title = format!("Inside an object extra description.");
+        let title = "Inside an object extra description.".to_string();
         let external = &extra_description.description;
-        let internal = format!(
-            "You are inside an object's extra description. That normally shouldn't be possible."
-        );
+        let internal = 
+            "You are inside an object's extra description. That normally shouldn't be possible.".to_string();
         let lateral = format!(
             "An extra description called '{}' is here.",
             extra_description.keyword

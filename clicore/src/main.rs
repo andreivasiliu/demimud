@@ -63,7 +63,7 @@ fn main() {
 
     // Print credits for Dawn of Time areas if they are included
     #[cfg(feature = "dawn-areas")]
-    print!("{}\n", colorize(include_str!("../license.txt")));
+    print!("{}", colorize(include_str!("../license.txt")));
 
     // Print info about DemiMUD and help pages
     print!("{}", colorize(include_str!("../notice.txt")));

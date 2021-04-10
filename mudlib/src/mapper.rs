@@ -40,7 +40,7 @@ enum MapElement {
     Exit(u8),
 }
 
-const EXITS: &[(u8, i8, i8, &'static str)] = &[
+const EXITS: &[(u8, i8, i8, &str)] = &[
     // Character, row offset, column offset, name
     (b'|', -1, 0, "north"),
     (b'/', -1, 1, "northeast"),
@@ -240,11 +240,11 @@ pub(crate) fn make_map(entity_world: &EntityWorld, location: EntityId) -> String
                 match room_map[position] {
                     MapElement::Empty => map_string.push_str("   "),
                     MapElement::Room(color, glyph) => {
-                        map_string.push_str("`");
+                        map_string.push('`');
                         map_string.push(color as char);
                         map_string.push_str("[`B");
                         map_string.push(glyph as char);
-                        map_string.push_str("`");
+                        map_string.push('`');
                         map_string.push(color as char);
                         map_string.push_str("]`^");
                     }

@@ -4,55 +4,55 @@ use crate::echo;
 // Mob commands
 impl<'e, 'p> EntityAgent<'e, 'p> {
     pub fn do_mob(&mut self, words: &[&str]) {
-        match words {
-            &["transfer", target, to_room] => {
+        match *words {
+            ["transfer", target, to_room] => {
                 self.do_mob_transfer(target, to_room);
             }
-            &["dequeueall"] => {
+            ["dequeueall"] => {
                 self.do_mob_dequeue_all();
             }
-            &["at", room, ref command @ ..] => {
+            ["at", room, ref command @ ..] => {
                 self.do_mob_at(room, command);
             }
-            &["goto", room] => {
+            ["goto", room] => {
                 self.do_mob_goto(room);
             }
-            &["mload", m_vnum] => {
+            ["mload", m_vnum] => {
                 self.do_mob_mload(m_vnum);
             }
-            &["oload", o_vnum] => {
+            ["oload", o_vnum] => {
                 self.do_mob_oload(o_vnum);
             }
-            &["call", p_vnum, target] => {
+            ["call", p_vnum, target] => {
                 self.do_mob_call(p_vnum, target);
             }
-            &["remember", target] => {
+            ["remember", target] => {
                 self.do_mob_remember(target);
             }
-            &["rsay", ref message @ ..] => {
+            ["rsay", ref message @ ..] => {
                 self.do_mob_rsay(&message.join(" "));
             }
-            &["echo", ref message @ ..] => {
+            ["echo", ref message @ ..] => {
                 self.do_mob_echo(&message.join(" "));
             }
-            &["vforce", target, ref command @ ..] => {
+            ["vforce", target, ref command @ ..] => {
                 self.do_mob_vforce(target, command);
             }
-            &["force", target, ref command @ ..] => {
+            ["force", target, ref command @ ..] => {
                 // No difference from normal command
                 self.do_force(target, command);
             }
-            &["silent", ref command @ ..] => {
+            ["silent", ref command @ ..] => {
                 self.do_mob_silent(command);
             }
-            &["mpfollow", target] => {
+            ["mpfollow", target] => {
                 // No difference from normal command
                 self.do_follow(target);
             }
-            &[cmd_word, ..] => {
+            [cmd_word, ..] => {
                 self.do_unknown(cmd_word);
             }
-            &[] => {
+            [] => {
                 self.do_unknown("<none>");
             }
         };
@@ -489,13 +489,10 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         let myself = self.entity_world.entity_info(self.entity_id);
         for item in myself.contained_entities() {
             if let Some(mobprog) = &item.components().mobprog {
-                match (&action, &mobprog.trigger) {
-                    (Action::Entry, MobProgTrigger::Entry { chance }) => {
-                        if random_percent(*chance) {
-                            triggered.push(mobprog.code.clone());
-                        }
+                if let (Action::Entry, MobProgTrigger::Entry { chance }) = (&action, &mobprog.trigger) {
+                    if random_percent(*chance) {
+                        triggered.push(mobprog.code.clone());
                     }
-                    _ => (),
                 }
             }
         }
@@ -520,22 +517,19 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
         for item in target.contained_entities() {
             if let Some(mobprog) = &item.components().mobprog {
-                match (&action, &mobprog.trigger) {
-                    (Action::Give { object_id }, MobProgTrigger::Give { item_vnum }) => {
-                        let object = self.entity_world.entity_info(*object_id);
-                        let object_matches = match item_vnum {
-                            VnumOrKeyword::Vnum(vnum) => object.components().general.vnum == *vnum,
-                            VnumOrKeyword::Keyword(keyword) => object
-                                .component_info()
-                                .keyword()
-                                .split_whitespace()
-                                .any(|word| word == keyword),
-                        };
-                        if object.is_object() && object_matches {
-                            triggered.push(mobprog.code.clone());
-                        }
+                if let (Action::Give { object_id }, MobProgTrigger::Give { item_vnum }) = (&action, &mobprog.trigger) {
+                    let object = self.entity_world.entity_info(*object_id);
+                    let object_matches = match item_vnum {
+                        VnumOrKeyword::Vnum(vnum) => object.components().general.vnum == *vnum,
+                        VnumOrKeyword::Keyword(keyword) => object
+                            .component_info()
+                            .keyword()
+                            .split_whitespace()
+                            .any(|word| word == keyword),
+                    };
+                    if object.is_object() && object_matches {
+                        triggered.push(mobprog.code.clone());
                     }
-                    _ => (),
                 }
             }
         }
@@ -565,7 +559,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
                 if let Some(mobprog) = &item.components().mobprog {
                     match (&action, &mobprog.trigger) {
                         (Action::Speech { message }, MobProgTrigger::Speech { pattern }) => {
-                            if message.find(pattern).is_some() {
+                            if message.contains(pattern) {
                                 triggered.push((entity.entity_id(), mobprog.code.clone()));
                             }
                         }
@@ -682,10 +676,10 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
                 .and_then(|mobile| mobile.remember.as_deref())
                 .unwrap_or("nobody");
 
-            match &words[..] {
-                &["if", ref condition @ ..] => {
-                    accept_commands = match condition {
-                        &["room", target, "==", vnum] => {
+            match words[..] {
+                ["if", ref condition @ ..] => {
+                    accept_commands = match *condition {
+                        ["room", target, "==", vnum] => {
                             assert!(
                                 ["$i", "$I"].contains(&target),
                                 "Don't know how to handle other targets"
@@ -698,7 +692,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
                             vnum == room.components().general.vnum.0
                         }
-                        &["objhere", vnum] => {
+                        ["objhere", vnum] => {
                             let objname = match vnum.parse() {
                                 Ok(vnum) => VnumOrKeyword::Vnum(Vnum(vnum)),
                                 Err(_) => VnumOrKeyword::Keyword(vnum.to_string()),
@@ -722,7 +716,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
                             found
                         }
-                        &["carries", target, object] => {
+                        ["carries", target, object] => {
                             let target =
                                 myself.find_entity(target, |e| e.is_mobile() || e.is_player());
                             let target = match target {
@@ -743,7 +737,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
                             }
                         }
                         // Silly, but temporary until I get a check_condition function
-                        &["!carries", target, object] => {
+                        ["!carries", target, object] => {
                             let target =
                                 myself.find_entity(target, |e| e.is_mobile() || e.is_player());
                             let target = match target {
@@ -764,16 +758,16 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
                             }
                         }
                         // FIXME: Wrong, but, I don't know how it can be one, ever
-                        &["isnpc", _target] => true,
-                        &["istarget", target] => target == remembered,
-                        &["!istarget", target] => target != remembered,
+                        ["isnpc", _target] => true,
+                        ["istarget", target] => target == remembered,
+                        ["!istarget", target] => target != remembered,
                         _ => false,
                     };
                 }
-                &["else"] => accept_commands = !accept_commands,
-                &["endif"] => accept_commands = true,
-                &["end"] if accept_commands => break,
-                command if accept_commands => {
+                ["else"] => accept_commands = !accept_commands,
+                ["endif"] => accept_commands = true,
+                ["end"] if accept_commands => break,
+                ref command if accept_commands => {
                     process_agent_command(self, command);
                 }
                 _ => (),
