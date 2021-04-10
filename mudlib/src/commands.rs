@@ -5,6 +5,7 @@ use crate::{
     components::{Door, Mobile, Object},
     echo,
     entity::Found,
+    files::fix_newlines,
     find_entities::EntityIterator,
     mapper::make_map,
     mobprogs::Action,
@@ -255,7 +256,7 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
             None => include_str!("../help.txt"),
             _ => "Unknown help file. See '`Whelp`^' without an argument.\r\n",
         };
-        echo!(self.info(), "{}", help_text);
+        echo!(self.info(), "{}", fix_newlines(help_text));
     }
 
     pub fn do_die(&mut self) {

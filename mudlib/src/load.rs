@@ -14,8 +14,8 @@ use crate::{
     },
 };
 
-pub(super) fn load_area(area_file_contents: &str) -> Area {
-    let mut parser = FileParser::new(area_file_contents);
+pub(super) fn load_area(area_file_contents: &str, file_name: &str) -> Area {
+    let mut parser = FileParser::new(area_file_contents, file_name);
 
     let mut area_data = None;
     let mut mobiles = None;

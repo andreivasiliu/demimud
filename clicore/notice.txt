@@ -4,3 +4,4 @@ an Interactive Fiction game. Type `Whelp cli`^ for more info.
 In this CLI, time is always paused; press enter to advance time.
 
 If you are new, type: `Wrecall mudschool`^
+

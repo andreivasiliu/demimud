@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, path::Path};
+use std::collections::BTreeMap;
 
 use crate::{file_parser::FileParser, files::Files};
 
@@ -35,7 +35,7 @@ impl Socials {
 
 pub(crate) fn load_socials(files: &dyn Files, path: &str) -> Socials {
     let contents = files.read_file(path).unwrap();
-    let mut parser = FileParser::new(&contents);
+    let mut parser = FileParser::new(&contents, path);
 
     let mut socials = BTreeMap::new();
 
@@ -102,9 +102,9 @@ pub(crate) fn load_socials(files: &dyn Files, path: &str) -> Socials {
 
 // Dawn-format socials; currently using Ultra-Envy socials instead
 #[allow(dead_code)]
-fn load_old_socials(path: &Path) -> Socials {
-    let contents = std::fs::read_to_string(path).unwrap();
-    let mut parser = FileParser::new(&contents);
+fn load_old_socials(files: &dyn Files, path: &str) -> Socials {
+    let contents = files.read_file(path).unwrap();
+    let mut parser = FileParser::new(&contents, path);
 
     let mut socials = BTreeMap::new();
 

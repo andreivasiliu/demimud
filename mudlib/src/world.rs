@@ -237,7 +237,7 @@ pub(super) fn load_world(files: &dyn Files, path: &str) -> World {
     for file_name in area_names {
         let data_file_name = format!("{}/{}", path, file_name);
         let contents = files.read_file(&data_file_name).unwrap();
-        let area = crate::load::load_area(&contents);
+        let area = crate::load::load_area(&contents, &data_file_name);
 
         world.areas.push((area.area_data, area.resets));
 
