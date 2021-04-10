@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use string_interner::StringInterner;
 
-use crate::components::{Components, Door, EntityType, GeneralData, InternComponent, MobProg};
+use crate::{components::{Components, Door, EntityType, GeneralData, InternComponent, MobProg}, state::Area};
 use crate::entity::{EntityId, EntityWorld, PermanentEntityId};
 use crate::world::{
     Gender, MobProgTrigger, Mobile, Object, ObjectFlags, ResetCommand, Vnum, World,
@@ -19,13 +19,6 @@ pub(crate) struct VnumTemplates {
     pub vnum_to_mobprog: Vec<Option<String>>,
     pub object_components: Vec<Option<(Components, Vec<Components>)>>,
     pub mobile_components: Vec<Option<(Components, Vec<Components>)>>,
-}
-
-// Note: this should probably become an entity that contains all of its rooms
-pub(crate) struct Area {
-    pub name: String,
-    pub vnums: (Vnum, Vnum),
-    pub credits: String,
 }
 
 pub(crate) fn import_from_world(entity_world: &mut EntityWorld, world: &World) -> (VnumTemplates, Vec<Area>) {

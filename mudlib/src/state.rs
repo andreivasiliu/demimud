@@ -12,10 +12,10 @@
 //!
 //! On a crash or restart, this entire state is thrown away and reloaded.
 
-use crate::{commands::{Action, EntityAgent}, import::Area};
+use crate::{agent::EntityAgent, world::Vnum, mobprogs::Action};
 use crate::{
     acting::{PlayerEcho, Players},
-    commands::update_entity_world,
+    tick::update_entity_world,
     echo,
     entity::EntityWorld,
     import::{import_from_world, VnumTemplates},
@@ -31,6 +31,13 @@ pub struct WorldState {
 
     pub(crate) players: Players,
     pub(crate) wander_ticks: u8,
+}
+
+// Note: this should probably become an entity that contains all of its rooms
+pub(crate) struct Area {
+    pub name: String,
+    pub vnums: (Vnum, Vnum),
+    pub credits: String,
 }
 
 pub(super) fn create_state(world: World, socials: Socials) -> WorldState {

@@ -18,10 +18,21 @@ Running `cargo watch -x build` in this directory can make hot-swapping code a si
   * Main method of sending text to the player, the target, and others in the room
 * colors - Turn codes like "`w" into "\e[37m".
   * Provides a `colorize(text)` method
+* agent - Object providing access to all game resources needed for commands
+  * Provides `EntityAgent`, upon which all player/mob commands are implemented
+  * Provides mutable references to the world state and echo buffers, and read-only access to data
+  * The `EntityAgent` supports only one of these at a time: mutating one entity, or examining many entities
+  * Has an `EntityId` referring to whoever is doing the command
 * commands - do_say, do_look, do_get, etc
   * Most commands that players and entities can do are here
-  * The commands are on the `Agent` object, which gives access to all game resources
-  * The `Agent` supports only one of these at a time: mutating one entity, or examining many entities
+  * The commands are on the `agent::EntityAgent` object, which gives access to all game resources
+* mobprogs - MobProg script runner, and additional do_mob_... commands
+  * Provides the do_mob command, which has several mob-specific subcommands
+  * Can check triggers for actions that happen in the room and run associated mobprogs
+  * Can read mobprog code and execute it line by line to make mobs do things
+* tick - Things that mobs do every second (e.g. wandering around rooms)
+  * Has `update_wander()`, which makes mobs move aroud a bit every 4 seconds
+  * Has `update_command_queue()`, which runs commands that were queued with a delay
 * components - Types of game data (mob, obj, etc) attached to entities
   * Components for entities (objects, mobs, rooms, etc) which hold state for that entity
 * entity - Every object in the world and relation between objects
