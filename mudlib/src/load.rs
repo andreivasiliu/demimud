@@ -6,12 +6,13 @@
 
 use rand::random;
 
-use crate::world::{
-    Area, AreaData, Exit, ExtraDescription, Gender, MobProg, MobProgTrigger, Mobile, Object,
-    ResetCommand, Room, Shop, Vnum, ObjectFlags, VnumOrKeyword
+use crate::{
+    file_parser::FileParser,
+    world::{
+        Area, AreaData, Exit, ExtraDescription, Gender, MobProg, MobProgTrigger, Mobile, Object,
+        ObjectFlags, ResetCommand, Room, Shop, Vnum, VnumOrKeyword,
+    },
 };
-
-use crate::file_parser::FileParser;
 
 pub(super) fn load_area(area_file_contents: &str) -> Area {
     let mut parser = FileParser::new(area_file_contents);
@@ -120,7 +121,7 @@ fn load_mobile_data(parser: &mut FileParser) -> Vec<Mobile> {
 fn load_mobile(parser: &mut FileParser, vnum: usize) -> Mobile {
     let mut mobile = Mobile {
         vnum: Vnum(vnum),
-        .. Default::default()
+        ..Default::default()
     };
 
     loop {
@@ -224,12 +225,7 @@ fn load_mobile(parser: &mut FileParser, vnum: usize) -> Mobile {
                             VnumOrKeyword::Keyword(item.to_string())
                         };
 
-                        (
-                            mopprog_vnum,
-                            MobProgTrigger::Give {
-                                item_vnum,
-                            },
-                        )
+                        (mopprog_vnum, MobProgTrigger::Give { item_vnum })
                     }
                     "ACT" => (
                         words.next(),
@@ -291,7 +287,7 @@ fn load_object_data(parser: &mut FileParser) -> Vec<Object> {
 fn load_object(parser: &mut FileParser, vnum: usize) -> Object {
     let mut object = Object {
         vnum: Vnum(vnum),
-        .. Default::default()
+        ..Default::default()
     };
 
     loop {
@@ -379,7 +375,7 @@ fn load_room_data(parser: &mut FileParser) -> Vec<Room> {
 fn load_room(parser: &mut FileParser, vnum: usize) -> Room {
     let mut room = Room {
         vnum: Vnum(vnum),
-        .. Default::default()
+        ..Default::default()
     };
 
     loop {

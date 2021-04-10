@@ -8,10 +8,11 @@ use std::collections::HashMap;
 
 use string_interner::StringInterner;
 
-use crate::{components::{Components, Door, EntityType, GeneralData, InternComponent, MobProg}, state::Area};
-use crate::entity::{EntityId, EntityWorld, PermanentEntityId};
-use crate::world::{
-    Gender, MobProgTrigger, Mobile, Object, ObjectFlags, ResetCommand, Vnum, World,
+use crate::{
+    components::{Components, Door, EntityType, GeneralData, InternComponent, MobProg},
+    entity::{EntityId, EntityWorld, PermanentEntityId},
+    state::Area,
+    world::{Gender, MobProgTrigger, Mobile, Object, ObjectFlags, ResetCommand, Vnum, World},
 };
 
 pub(crate) struct VnumTemplates {
@@ -21,7 +22,10 @@ pub(crate) struct VnumTemplates {
     pub mobile_components: Vec<Option<(Components, Vec<Components>)>>,
 }
 
-pub(crate) fn import_from_world(entity_world: &mut EntityWorld, world: &World) -> (VnumTemplates, Vec<Area>) {
+pub(crate) fn import_from_world(
+    entity_world: &mut EntityWorld,
+    world: &World,
+) -> (VnumTemplates, Vec<Area>) {
     let mut room_vnum_to_id = HashMap::new();
     let mut exit_leads_to = HashMap::new();
 
@@ -213,7 +217,8 @@ pub(crate) fn import_from_world(entity_world: &mut EntityWorld, world: &World) -
     for room in &world.rooms {
         if room.vnum.0 != 0 {
             let room_entity = entity_world.entity_info(room_vnum_to_id[&room.vnum.0]);
-            vnum_templates.vnum_to_room_entity[room.vnum.0] = Some(room_entity.permanent_entity_id());
+            vnum_templates.vnum_to_room_entity[room.vnum.0] =
+                Some(room_entity.permanent_entity_id());
         }
     }
 
@@ -470,8 +475,9 @@ fn import_object_components(
 
         let title = "Inside an object extra description.".to_string();
         let external = &extra_description.description;
-        let internal = 
-            "You are inside an object's extra description. That normally shouldn't be possible.".to_string();
+        let internal =
+            "You are inside an object's extra description. That normally shouldn't be possible."
+                .to_string();
         let lateral = format!(
             "An extra description called '{}' is here.",
             extra_description.keyword

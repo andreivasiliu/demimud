@@ -1,6 +1,9 @@
 use string_interner::StringInterner;
 
-use crate::{entity::EntityInfo, world::{Gender, MobProgTrigger, Shop, Vnum}};
+use crate::{
+    entity::EntityInfo,
+    world::{Gender, MobProgTrigger, Shop, Vnum},
+};
 
 #[derive(Clone)]
 pub(crate) struct IntStr {
@@ -121,7 +124,11 @@ impl ComponentFromEntity for Mobile {
 
 impl ComponentFromEntity for Shop {
     fn component_from_entity<'e>(entity: &EntityInfo<'e>) -> Option<&'e Self> {
-        entity.components().mobile.as_ref().and_then(|mobile| mobile.shopkeeper.as_ref())
+        entity
+            .components()
+            .mobile
+            .as_ref()
+            .and_then(|mobile| mobile.shopkeeper.as_ref())
     }
 }
 
@@ -156,8 +163,8 @@ impl InternComponent for StringInterner {
 
     fn set_short_description(&mut self, act_info: &mut ActInfo, short_description: &str) {
         // Note: old value is forever lost; this kinda leaks
-        act_info.short_description = IntStr { symbol:
-            self.get_or_intern(short_description)
+        act_info.short_description = IntStr {
+            symbol: self.get_or_intern(short_description),
         };
     }
 

@@ -16,15 +16,23 @@ fn main() {
     let bin_path = std::env::current_exe().expect("Could not get path to executable");
 
     let mudlib_name = PathBuf::from(library_filename("mudlib"));
-    println!("Using {} next to bin path: {}", mudlib_name.display(), bin_path.display());
-    println!("Using data inside current directory: {}", std::env::current_dir().unwrap().display());
+    println!(
+        "Using {} next to bin path: {}",
+        mudlib_name.display(),
+        bin_path.display()
+    );
+    println!(
+        "Using data inside current directory: {}",
+        std::env::current_dir().unwrap().display()
+    );
 
-    let bin_dir = bin_path.parent().expect("Could not get directory fo executable");
+    let bin_dir = bin_path
+        .parent()
+        .expect("Could not get directory fo executable");
 
     let mudlib_original = bin_dir.join(library_filename("mudlib"));
     let mudlib_backup = bin_dir.join(library_filename("backup_mudlib"));
     let mudlib = bin_dir.join(library_filename("live_mudlib"));
-
 
     loop {
         // On Windows a live .dll file is locked and cannot be written to, so

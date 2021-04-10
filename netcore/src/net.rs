@@ -1,8 +1,9 @@
 use mio::{Interest, Token};
-use std::{collections::BTreeMap, time::Duration};
 use std::{
+    collections::BTreeMap,
     io::{ErrorKind::WouldBlock, Read},
     net::SocketAddr,
+    time::Duration,
 };
 
 #[repr(transparent)]

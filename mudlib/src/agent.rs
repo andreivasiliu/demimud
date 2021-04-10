@@ -1,5 +1,16 @@
-use crate::{WorldState, acting::{InfoTarget, Players}, components::{Components, EntityType, GeneralData, Silver}, echo, entity::{EntityId, EntityWorld}, find_entities::MatchError, import::VnumTemplates, mobprogs::Action, socials::Socials, state::Area, world::{Gender, Vnum, opposite_direction}};
-use crate::components::InternComponent;
+use crate::{
+    acting::{InfoTarget, Players},
+    components::{Components, EntityType, GeneralData, InternComponent, Silver},
+    echo,
+    entity::{EntityId, EntityWorld},
+    find_entities::MatchError,
+    import::VnumTemplates,
+    mobprogs::Action,
+    socials::Socials,
+    state::Area,
+    world::{opposite_direction, Gender, Vnum},
+    WorldState,
+};
 
 pub(crate) struct EntityAgent<'e, 'p> {
     pub entity_world: &'e mut EntityWorld,
@@ -57,7 +68,12 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         }
     }
 
-    pub fn check_followers(&mut self, from_room_id: EntityId, direction: &str, to_room_id: EntityId) {
+    pub fn check_followers(
+        &mut self,
+        from_room_id: EntityId,
+        direction: &str,
+        to_room_id: EntityId,
+    ) {
         let mut followers = Vec::new();
         let myself = self.entity_world.entity_info(self.entity_id);
         let room = self.entity_world.entity_info(from_room_id);

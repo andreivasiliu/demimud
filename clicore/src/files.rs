@@ -11,7 +11,7 @@ impl Files for StaticFiles {
             "data/area/basic.are" => include_str!("../../data/basic_area.txt"),
             _ => panic!("Unknown file {}", path),
         };
-        
+
         Ok(contents.to_string())
     }
 }

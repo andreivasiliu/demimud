@@ -1,6 +1,6 @@
 use string_interner::StringInterner;
 
-use crate::{WorldState, agent::EntityAgent, commands::process_agent_command};
+use crate::{agent::EntityAgent, commands::process_agent_command, WorldState};
 
 pub(super) fn update_entity_world(world_state: &mut WorldState) {
     update_wander(world_state);

@@ -24,7 +24,7 @@
 //!     Err(error) => return self.echo_error(error),
 //! };
 //! ```
-//! 
+//!
 //! The `EntityIterator` is implemented for both iterators of entities, as
 //! well as iterators of match candidates.
 //!
@@ -36,7 +36,10 @@
 
 use std::marker::PhantomData;
 
-use crate::{components::ComponentFromEntity, entity::{EntityId, EntityInfo}};
+use crate::{
+    components::ComponentFromEntity,
+    entity::{EntityId, EntityInfo},
+};
 
 pub(crate) enum MatchError {
     /// An error message where $N will be replaced with the current entity
@@ -203,7 +206,10 @@ where
         self.inner.next_match_candidate().map(|mut item| {
             match &mut item {
                 GoodMatch {
-                    entity, preferred, component, ..
+                    entity,
+                    preferred,
+                    component,
+                    ..
                 } => {
                     let new_preferred = (self.predicate)(&entity, component);
                     *preferred = Some(new_preferred);
@@ -282,7 +288,7 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let item = self.inner.next_match_candidate();
-            
+
             return if let Some(item) = item {
                 Some(match item {
                     GoodMatch {
@@ -318,11 +324,11 @@ where
                         } else {
                             continue;
                         }
-                    },
+                    }
                 })
             } else {
                 None
-            }
+            };
         }
     }
 }
@@ -338,7 +344,10 @@ pub(crate) trait EntityIterator<'e, C: 'e>: Sized {
         }
     }
 
-    fn prefer_component<'p, P: Fn(&EntityInfo<'p>, &C) -> bool>(self, prefer: P) -> PreferComponent<'p, Self, P, C> {
+    fn prefer_component<'p, P: Fn(&EntityInfo<'p>, &C) -> bool>(
+        self,
+        prefer: P,
+    ) -> PreferComponent<'p, Self, P, C> {
         PreferComponent {
             inner: self,
             predicate: prefer,
@@ -358,9 +367,7 @@ pub(crate) trait EntityIterator<'e, C: 'e>: Sized {
         }
     }
 
-    fn with_component<NewComponent>(
-        self,
-    ) -> WithComponent<'e, Self, C, NewComponent> {
+    fn with_component<NewComponent>(self) -> WithComponent<'e, Self, C, NewComponent> {
         WithComponent {
             inner: self,
             shadow1: PhantomData::default(),
@@ -388,7 +395,10 @@ pub(crate) trait EntityIterator<'e, C: 'e>: Sized {
         }
     }
 
-    fn find_one_with_component_or(mut self, error: &'static str) -> Result<(EntityInfo<'e>, &'e C), MatchError> {
+    fn find_one_with_component_or(
+        mut self,
+        error: &'static str,
+    ) -> Result<(EntityInfo<'e>, &'e C), MatchError> {
         let mut bad_match = None;
         let mut bad_match_conditions = 0;
         let mut unpreferred_match = None;
@@ -403,7 +413,9 @@ pub(crate) trait EntityIterator<'e, C: 'e>: Sized {
                 } => {
                     unpreferred_match = Some((entity, component));
                 }
-                GoodMatch { entity, component, .. } => {
+                GoodMatch {
+                    entity, component, ..
+                } => {
                     return Ok((entity, component));
                 }
                 BadMatch {
@@ -429,7 +441,8 @@ pub(crate) trait EntityIterator<'e, C: 'e>: Sized {
     }
 
     fn find_one_or(self, error: &'static str) -> Result<EntityInfo<'e>, MatchError> {
-        self.find_one_with_component_or(error).map(|result| result.0)
+        self.find_one_with_component_or(error)
+            .map(|result| result.0)
     }
 }
 

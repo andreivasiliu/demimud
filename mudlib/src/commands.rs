@@ -4,12 +4,13 @@ use crate::{
     colors::recolor,
     components::{Door, Mobile, Object},
     echo,
+    entity::Found,
     find_entities::EntityIterator,
+    mapper::make_map,
     mobprogs::Action,
     state::WorldState,
     world::{common_direction, long_direction, opposite_direction, Shop},
 };
-use crate::{entity::Found, mapper::make_map};
 
 pub(crate) fn process_agent_command(agent: &mut EntityAgent, words: &[&str]) -> bool {
     match *words {

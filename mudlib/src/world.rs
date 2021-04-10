@@ -98,7 +98,11 @@ pub(super) enum ObjectFlags {
     Unknown,
 
     /// Object is a container
-    Container { closable: bool, closed: bool, locked: bool },
+    Container {
+        closable: bool,
+        closed: bool,
+        locked: bool,
+    },
 }
 
 impl Default for ObjectFlags {

@@ -66,7 +66,7 @@ pub(crate) fn load_socials(files: &dyn Files, path: &str) -> Socials {
             assert_eq!(key, "Name");
             current_social = Some(Social {
                 name: parser.read_until_tilde().trim_start().to_string(),
-                .. Default::default()
+                ..Default::default()
             });
             continue;
         }
@@ -130,7 +130,7 @@ fn load_old_socials(path: &Path) -> Socials {
             assert_eq!(key, "name");
             current_social = Some(Social {
                 name: parser.read_until_tilde().to_string(),
-                .. Default::default()
+                ..Default::default()
             });
             continue;
         }

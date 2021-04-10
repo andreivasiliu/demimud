@@ -1,12 +1,11 @@
-use std::{collections::BTreeMap, net::SocketAddr};
 use std::panic::catch_unwind;
+use std::{collections::BTreeMap, net::SocketAddr};
 
-use crate::{WorldState, colorize, files::RealFiles, socials, state, world};
-use crate::acting::Players;
-
-use serde::{Deserialize, Serialize};
 use libtelnet_rs::{events::TelnetEvents, Parser};
 use netcore::{self, EntryCode, ExitCode, NetServer, Source};
+use serde::{Deserialize, Serialize};
+
+use crate::{acting::Players, colorize, files::RealFiles, socials, state, world, WorldState};
 
 #[derive(Serialize, Deserialize)]
 struct ConnectionState {
@@ -214,10 +213,7 @@ pub extern "C" fn do_things(net_server: &mut NetServer, entry_code: EntryCode) -
                                             .expect("Checked in previous match arm");
 
                                         let old_game = catch_unwind(move || {
-                                            game.world_state.process_player_command(
-                                                player,
-                                                words,
-                                            );
+                                            game.world_state.process_player_command(player, words);
                                             game
                                         });
 

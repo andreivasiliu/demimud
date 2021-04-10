@@ -54,8 +54,10 @@
 use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter, Result, Write};
 
-use crate::entity::{EntityId, EntityInfo};
-use crate::world::Gender;
+use crate::{
+    entity::{EntityId, EntityInfo},
+    world::Gender,
+};
 
 pub(crate) struct Players {
     pub(crate) player_echoes: BTreeMap<String, PlayerEcho>,
@@ -89,9 +91,7 @@ impl Players {
             };
         }
 
-        InfoTarget {
-            players: self,
-        }
+        InfoTarget { players: self }
     }
 }
 
@@ -120,7 +120,7 @@ impl<'e> Actor for EntityInfo<'e> {
     fn entity_id(&self) -> EntityId {
         EntityInfo::entity_id(&self)
     }
-    
+
     fn is_player(&self, player_name: &str) -> bool {
         self.is_player_with_name(player_name)
     }
@@ -170,7 +170,7 @@ pub(crate) struct Acts {
     pub target_entity_id: Option<EntityId>,
 }
 
-pub(crate) struct ActingStage<'p, 'e, ActsType=()> {
+pub(crate) struct ActingStage<'p, 'e, ActsType = ()> {
     players: &'p mut Players,
     acts: ActsType,
 
@@ -271,7 +271,7 @@ impl Write for InfoTarget<'_> {
     }
 }
 
-pub(crate) struct ActTarget<'a, 'p: 'a, 'e: 'a, ActType=()> {
+pub(crate) struct ActTarget<'a, 'p: 'a, 'e: 'a, ActType = ()> {
     stage: &'a mut ActingStage<'p, 'e, ActType>,
     target_type: TargetType,
 }
@@ -301,7 +301,7 @@ impl Write for ActTarget<'_, '_, '_, Acts> {
             target: self.stage.target_actor,
             message,
         };
-        
+
         let stored_acts = match self.target_type {
             TargetType::Myself => &mut self.stage.acts.myself,
             TargetType::Target => &mut self.stage.acts.target,

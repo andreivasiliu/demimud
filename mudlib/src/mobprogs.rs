@@ -1,5 +1,12 @@
-use crate::{acting::Acts, agent::EntityAgent, commands::process_agent_command, components::EntityComponentInfo, entity::{EntityId, Found}, world::{MobProgTrigger, Vnum, VnumOrKeyword}};
-use crate::echo;
+use crate::{
+    acting::Acts,
+    agent::EntityAgent,
+    commands::process_agent_command,
+    components::EntityComponentInfo,
+    echo,
+    entity::{EntityId, Found},
+    world::{MobProgTrigger, Vnum, VnumOrKeyword},
+};
 
 // Mob commands
 impl<'e, 'p> EntityAgent<'e, 'p> {
@@ -489,7 +496,9 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
         let myself = self.entity_world.entity_info(self.entity_id);
         for item in myself.contained_entities() {
             if let Some(mobprog) = &item.components().mobprog {
-                if let (Action::Entry, MobProgTrigger::Entry { chance }) = (&action, &mobprog.trigger) {
+                if let (Action::Entry, MobProgTrigger::Entry { chance }) =
+                    (&action, &mobprog.trigger)
+                {
                     if random_percent(*chance) {
                         triggered.push(mobprog.code.clone());
                     }
@@ -517,7 +526,9 @@ impl<'e, 'p> EntityAgent<'e, 'p> {
 
         for item in target.contained_entities() {
             if let Some(mobprog) = &item.components().mobprog {
-                if let (Action::Give { object_id }, MobProgTrigger::Give { item_vnum }) = (&action, &mobprog.trigger) {
+                if let (Action::Give { object_id }, MobProgTrigger::Give { item_vnum }) =
+                    (&action, &mobprog.trigger)
+                {
                     let object = self.entity_world.entity_info(*object_id);
                     let object_matches = match item_vnum {
                         VnumOrKeyword::Vnum(vnum) => object.components().general.vnum == *vnum,
